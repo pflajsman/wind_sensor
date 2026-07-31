@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="540" viewBox="0 0 680 540" role="img">
+<title>Awning wind sensor - component wiring overview</title>
+<desc>LaskaKit ESP32-H2 DevKit connects to a GY-291 ADXL345 over I2C plus an INT1 wake line on IO13, and to a protected 18650 cell via the JST-PH-2 connector. The battery divider is internal on IO2. IO12 and IO9 are unused.</desc>
+<style>
+text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.t{font-size:14px;font-weight:500;fill:#2C2C2A}
+.s{font-size:12px;font-weight:400;fill:#5F5E5A}
+.pp .t{fill:#3C3489}.pp .s{fill:#534AB7}
+.tt .t{fill:#085041}.tt .s{fill:#0F6E56}
+.w{stroke:#73726C;stroke-width:1.5;fill:none;stroke-linecap:round}
+.lbl{font-size:12px;fill:#5F5E5A}
+.warn{font-size:12px;fill:#A32D2D}
+</style>
+<rect width="680" height="540" fill="#FDFDFC"/>
+
+<g class="pp">
+<rect x="100" y="60" width="200" height="310" rx="12" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8"/>
+<text class="t" x="200" y="92" text-anchor="middle">ESP32-H2-DEVKit V2</text>
+<text class="s" x="200" y="112" text-anchor="middle">Zigbee + charger, 14.5 &#181;A</text>
+<text class="s" x="292" y="174" text-anchor="end">3V3</text>
+<text class="s" x="292" y="209" text-anchor="end">IO11 / SDA</text>
+<text class="s" x="292" y="244" text-anchor="end">IO10 / SCL</text>
+<text class="s" x="292" y="279" text-anchor="end">IO13 (LP)</text>
+<text class="s" x="292" y="314" text-anchor="end">GND</text>
+<text class="s" x="112" y="344">IO2 &#8212; Vbat, internal divider</text>
+</g>
+
+<g class="tt">
+<rect x="460" y="90" width="180" height="280" rx="12" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8"/>
+<text class="t" x="550" y="122" text-anchor="middle">GY-291 / ADXL345</text>
+<text class="s" x="472" y="174">VCC + CS</text>
+<text class="s" x="472" y="209">SDA</text>
+<text class="s" x="472" y="244">SCL</text>
+<text class="s" x="472" y="279">INT1</text>
+<text class="s" x="472" y="314">GND</text>
+<text class="s" x="472" y="344">addr 0x53 (SDO low)</text>
+</g>
+
+<line class="w" x1="300" y1="170" x2="458" y2="170"/>
+<line class="w" x1="300" y1="205" x2="458" y2="205"/>
+<line class="w" x1="300" y1="240" x2="458" y2="240"/>
+<line class="w" x1="300" y1="275" x2="458" y2="275"/>
+<line class="w" x1="300" y1="310" x2="458" y2="310"/>
+<text class="lbl" x="379" y="164" text-anchor="middle">3.3 V permanent</text>
+<text class="lbl" x="379" y="199" text-anchor="middle">SDA</text>
+<text class="lbl" x="379" y="234" text-anchor="middle">SCL</text>
+<text class="lbl" x="379" y="269" text-anchor="middle">INT1 wake</text>
+<text class="lbl" x="379" y="304" text-anchor="middle">GND</text>
+
+<g>
+<rect x="100" y="450" width="200" height="60" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.8"/>
+<text class="t" x="200" y="476" text-anchor="middle">18650 Li-Ion</text>
+<text class="s" x="200" y="496" text-anchor="middle">protected, 3000 mAh</text>
+</g>
+<line class="w" x1="200" y1="450" x2="200" y2="372"/>
+<text class="lbl" x="210" y="416">JST-PH-2</text>
+
+<text class="warn" x="330" y="452">Do not use: IO12 (&#181;&#352;up power switch), IO9 (RGB LED)</text>
+<text class="s" x="330" y="472">Powering the sensor from IO12 stops it waking the MCU.</text>
+<text class="s" x="330" y="492">No external divider needed &#8212; it is on the board.</text>
+</svg>

@@ -1,0 +1,15 @@
+# Claude Code local machine settings
+.claude/settings.local.json
+
+# Arduino / PlatformIO build artifacts
+build/
+*.elf
+*.hex
+*.bin
+*.o
+*.d
+
+# OS files
+Thumbs.db
+.DS_Store
+desktop.ini
