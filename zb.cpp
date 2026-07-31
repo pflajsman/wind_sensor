@@ -1,3 +1,8 @@
+#include <Zigbee.h>
+#include <ZigbeeCore.h>
+#include <ZigbeeEP.h>
+#include <ZigbeeTypes.h>
+
 // zb.cpp — Zigbee end-device implementation (spec §7).
 //
 // Guarded so the sketch refuses to compile in the wrong Zigbee mode (§7): the

@@ -55,7 +55,17 @@ static void enterDeepSleep(uint32_t timer_wake_s) {
 
   // Arm EXT1 deep-sleep wake on IO13 (high) + IO14 (low) via the level mask (§4.4,
   // §3.3). io_mask selects the pins; level_mask sets each pin's trigger level.
+  //
+  // We intentionally keep the ..._with_level_mask() call even though core 3.3.x
+  // marks it deprecated. Its suggested replacement, esp_sleep_enable_ext1_wakeup_io(),
+  // takes ONE mode for all pins (ANY_LOW or ANY_HIGH) — it cannot mix a high-trigger
+  // accel INT1 and a low-trigger button in a single wake config. Per-pin levels are
+  // still supported on the ESP32-H2 (SOC_PM_SUPPORT_EXT1_WAKEUP_MODE_PER_PIN), so the
+  // level-mask API is the correct tool here; silence just this one deprecation warning.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   esp_sleep_enable_ext1_wakeup_with_level_mask(EXT1_IO_MASK, EXT1_LEVEL_MASK);
+#pragma GCC diagnostic pop
 
   if (timer_wake_s > 0) {
     esp_sleep_enable_timer_wakeup((uint64_t)timer_wake_s * 1000000ULL);
