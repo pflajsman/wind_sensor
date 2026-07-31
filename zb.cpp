@@ -12,8 +12,8 @@
 #include "Zigbee.h"
 
 // One ZigbeeAnalog endpoint per reported number (§7). Analog Input cluster 0x000C.
-// TODO(core): confirm ZigbeeAnalog and these method names against the installed
-// arduino-esp32 core (libraries/Zigbee/src/ep/). API drifts between core versions.
+// API verified against arduino-esp32 master (libraries/Zigbee/src/ep/ZigbeeAnalog.h):
+// ctor(uint8_t endpoint), addAnalogInput(), setAnalogInput(float), reportAnalogInput().
 static ZigbeeAnalog analogRms  (EP_MOVEMENT_RMS);
 static ZigbeeAnalog analogPeak (EP_MOVEMENT_PEAK);
 static ZigbeeAnalog analogPitch(EP_TILT_PITCH);
@@ -26,7 +26,7 @@ static void addAnalog(ZigbeeAnalog &ep) {
 }
 
 // Basic-cluster identifiers advertised on join. These MUST match the deCONZ DDF
-// (integration/deconz/awning_wind_sensor.json: manufacturername / modelid) and the
+// (integration/deconz/awning_wind_sensor.ddf: manufacturername / modelid) and the
 // Z2M converter, or the host-side mapping will not bind to the device. Without an
 // explicit call the arduino-esp32 stack advertises a generic/blank model, which
 // matches nothing — so set it deterministically here.
@@ -43,16 +43,15 @@ bool zbBegin(uint32_t timeout_ms) {
   addAnalog(analogRoll);
 
   // Advertise a stable manufacturer/model on the Basic cluster (0x0000) so the DDF
-  // binds. The DDF reads Basic from endpoint 10 (analogRms), so set it there.
-  // TODO(core): method name is setManufacturerAndModel() on ZigbeeEP in core >= 3.1;
-  // verify against libraries/Zigbee/src/ in your installed core.
+  // binds. setManufacturerAndModel() is a ZigbeeEP method (inherited by ZigbeeAnalog);
+  // the DDF reads Basic from endpoint 10 (analogRms), so set it there.
   analogRms.setManufacturerAndModel(ZB_MANUFACTURER, ZB_MODEL);
 
-  // Battery goes through the standard Basic + Power Configuration clusters, which
-  // the stack exposes on the primary endpoint via setPowerSource/setBattery* (§7).
-  // TODO(core): if the installed core attaches battery reporting to a specific
-  // endpoint object instead of the global Zigbee singleton, move these accordingly.
-  Zigbee.setPowerSource(ZB_POWER_SOURCE_BATTERY);
+  // Battery reporting is per-endpoint: setPowerSource / setBatteryPercentage /
+  // reportBatteryPercentage are ZigbeeEP methods, NOT on the Zigbee core singleton
+  // (verified against libraries/Zigbee/src/ZigbeeEP.h). Attach them to the same
+  // primary endpoint the DDF reads Basic from (analogRms).
+  analogRms.setPowerSource(ZB_POWER_SOURCE_BATTERY);
 
   if (!Zigbee.begin(ZIGBEE_END_DEVICE)) {
     DBGLN("[zb] Zigbee.begin failed");
@@ -72,13 +71,26 @@ bool zbBegin(uint32_t timeout_ms) {
 bool zbConnected() { return Zigbee.connected(); }
 
 bool zbForceCommission(uint32_t timeout_ms) {
-  // Trigger network steering to (re)join. This is the button-initiated pairing
-  // path. We deliberately do NOT call any erase/factory-reset that would wipe the
-  // IEEE address — that orphans the pairing and spawns ghost devices (§8.1).
-  // TODO(core): confirm the steering entry point on the installed core. On core
-  // >= 3.1 this is typically Zigbee.factoryReset(false) for a soft rejoin, or
-  // openNetwork()/network-steering helpers; verify in libraries/Zigbee/src/.
-  DBGLN("[zb] forcing commissioning (network steering)...");
+  // Button-initiated pairing. If we are already connected there is nothing to do —
+  // avoid a needless reset (and the device restart it triggers).
+  if (Zigbee.connected()) {
+    DBGLN("[zb] already connected — no commissioning needed");
+    return true;
+  }
+
+  // Reset the local Zigbee network state and re-run steering so the device rejoins
+  // the (now-open) coordinator network. factoryReset(false) clears the stored
+  // network binding WITHOUT rebooting here, so we can wait for the rejoin inline.
+  //
+  // This is the Zigbee-stack network reset, NOT esp erase_flash: it does not wipe
+  // the IEEE address, so it does not orphan the pairing or spawn ghost devices
+  // (§8.1). Open the coordinator network first (Phoscon permit-join / deCONZ
+  // Permit Join), then press the button.
+  //
+  // Verified against arduino-esp32 master: ZigbeeCore::factoryReset(bool restart),
+  // restart defaults to true; pass false to keep running.
+  DBGLN("[zb] forcing commissioning: factoryReset(false) + rejoin (open the network now)");
+  Zigbee.factoryReset(false);
 
   uint32_t t0 = millis();
   while (!Zigbee.connected() && (millis() - t0) < timeout_ms) {
@@ -103,7 +115,8 @@ void zbReportMetrics(const AccelMetrics &m) {
 
 void zbReportBattery(uint8_t soc_percent, float volts) {
   (void)volts; // voltage is carried by the stack's own battery voltage attribute
-  Zigbee.setBatteryPercentage(soc_percent);
-  Zigbee.reportBatteryPercentage();
+  // Per-endpoint battery methods (ZigbeeEP), on the same endpoint as setPowerSource.
+  analogRms.setBatteryPercentage(soc_percent);
+  analogRms.reportBatteryPercentage();
   DBG("[zb] reported battery %u%%\n", soc_percent);
 }

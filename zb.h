@@ -1,8 +1,11 @@
 // zb.h — Zigbee end-device interface (spec §7).
 //
-// !!! VERIFY endpoint classes exist in YOUR installed arduino-esp32 core before
-// !!! trusting this. Inspect libraries/Zigbee/src/ep/ (§7, §13). This code targets
-// !!! core >= 3.1 where ZigbeeAnalog (Analog Input cluster 0x000C) exists.
+// API verified against arduino-esp32 master (libraries/Zigbee/src/): ZigbeeAnalog
+// (Analog Input cluster 0x000C), and the ZigbeeEP methods setManufacturerAndModel /
+// setPowerSource / setBatteryPercentage / reportBatteryPercentage, plus the core
+// ZigbeeCore::factoryReset(bool restart). Requires a core new enough to ship the
+// Zigbee library with ZigbeeAnalog (core >= 3.1). If you pin an older core, confirm
+// these still exist in libraries/Zigbee/src/ep/ (§7, §13).
 
 #pragma once
 
