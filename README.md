@@ -11,21 +11,17 @@ Full design rationale: [`awning-wind-sensor-spec.md`](awning-wind-sensor-spec.md
 - LaskaKit ESP32-H2-DEVKit V2 (`ESP32-H2-MINI-1-N4`, PCB antenna)
 - GY-291 breakout (Analog Devices ADXL345), I2C mode, `CS` tied HIGH (§8.8)
 - Protected 18650 Li-Ion cell via the board's `JST-PH-2` connector
-- **Pairing button: momentary switch from `IO14` to `GND`** (internal pull-up,
-  active-low). `IO14` is the spec's designated spare LP wake pin (§3.3).
 
 Wiring is in spec §3. The accelerometer's `VCC` goes to the **permanent `3V3`**
 pin, never to the `IO12`-switched µSup rail (§3.2).
 
-### Pairing button (IO14)
+### Wake & pairing
 
-A short press wakes the device and sends one immediate measurement + battery report
-(handy for bench testing). If the device is not yet on a Zigbee network, the same
-press forces commissioning — so it doubles as the pairing trigger. Deep-sleep wake
-uses **EXT1** (the ESP32-H2's deep-sleep GPIO mechanism), which lets the active-high
-accelerometer interrupt (IO13) and the active-low button (IO14) share one wake config
-via a per-pin level mask. To pair: open the coordinator network (Phoscon *Permit join*),
-then press the button. See `integration/deconz/README.md`.
+The device wakes from deep sleep on the accelerometer interrupt (`IO13`) via **EXT1**
+(the ESP32-H2's deep-sleep GPIO mechanism, active-high) or on the heartbeat timer.
+There is no pairing button — pairing happens on **cold boot**: power-cycle the device
+with the coordinator network open (Phoscon *Permit join* / deCONZ *Permit Join*) and it
+commissions itself. See `integration/deconz/README.md`.
 
 ## Files
 

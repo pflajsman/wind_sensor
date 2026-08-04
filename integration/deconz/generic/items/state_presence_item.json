@@ -1,0 +1,9 @@
+{
+  "schema": "resourceitem1.schema.json",
+  "id": "state/presence",
+  "datatype": "Bool",
+  "access": "R",
+  "public": true,
+  "description": "True when awning movement exceeds the firmware threshold (motion detected).",
+  "default": false
+}

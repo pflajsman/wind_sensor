@@ -1,0 +1,9 @@
+# Managed components. Downloaded on the first `idf.py build` into managed_components/.
+# esp-zigbee-lib >= 2.0.0 is the API used by the current SDK deep_sleep_end_device example
+# (the ezb_* / esp_zigbee_* "ezbee" API) — matches ESP-IDF 6.x. This is DIFFERENT from the
+# older esp_zb_* 1.x API; the app code must use the 2.x names.
+dependencies:
+  idf:
+    version: ">=5.2"
+  espressif/esp-zigbee-lib:
+    version: ">=2.0.0"

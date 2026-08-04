@@ -1,9 +1,10 @@
 {
   "schema": "devcap1.schema.json",
-  "manufacturername": "DIY",
+  "manufacturername": "$MF_DIY",
   "modelid": "awning-wind-sensor",
   "product": "Awning wind protection sensor",
   "sleeper": true,
+  "supportsMgmtBind": false,
   "status": "Gold",
   "comment": "ADXL345 + ESP32-H2 Zigbee end device. Four Analog Input endpoints (EP 10-13, cluster 0x000C) carry movement metrics; battery via Power Configuration (0x0001). See spec §7, §11. Firmware unchanged from Z2M build. modelid/manufacturername below MUST match what the device reports on join (Phoscon -> device -> Basic cluster 0x0000, attrs 0x0004/0x0005).",
 
@@ -30,6 +31,10 @@
         { "name": "attr/uniqueid" },
         {
           "name": "state/movement_rms",
+          "schema": "resourceitem1.schema.json",
+          "datatype": "Double",
+          "access": "R",
+          "public": true,
           "description": "AC-energy movement intensity, mg (spec §6)",
           "parse": { "at": "0x0055", "cl": "0x000c", "ep": 10, "eval": "Item.val = Attr.val" },
           "read": { "at": "0x0055", "cl": "0x000c", "ep": 10 },
@@ -57,6 +62,10 @@
         { "name": "attr/uniqueid" },
         {
           "name": "state/movement_peak",
+          "schema": "resourceitem1.schema.json",
+          "datatype": "Double",
+          "access": "R",
+          "public": true,
           "description": "Peak absolute deviation, mg (spec §6)",
           "parse": { "at": "0x0055", "cl": "0x000c", "ep": 11, "eval": "Item.val = Attr.val" },
           "read": { "at": "0x0055", "cl": "0x000c", "ep": 11 },
@@ -84,6 +93,10 @@
         { "name": "attr/uniqueid" },
         {
           "name": "state/tilt_pitch",
+          "schema": "resourceitem1.schema.json",
+          "datatype": "Double",
+          "access": "R",
+          "public": true,
           "description": "Mean-vector pitch, degrees (spec §6)",
           "parse": { "at": "0x0055", "cl": "0x000c", "ep": 12, "eval": "Item.val = Attr.val" },
           "read": { "at": "0x0055", "cl": "0x000c", "ep": 12 },
@@ -99,7 +112,7 @@
         "profile": "0x0104",
         "device": "0x000c",
         "endpoint": "0x0d",
-        "in": ["0x000c", "0x0001"]
+        "in": ["0x000c"]
       },
       "items": [
         { "name": "attr/id" },
@@ -111,16 +124,51 @@
         { "name": "attr/uniqueid" },
         {
           "name": "state/tilt_roll",
+          "schema": "resourceitem1.schema.json",
+          "datatype": "Double",
+          "access": "R",
+          "public": true,
           "description": "Mean-vector roll, degrees (spec §6)",
           "parse": { "at": "0x0055", "cl": "0x000c", "ep": 13, "eval": "Item.val = Attr.val" },
           "read": { "at": "0x0055", "cl": "0x000c", "ep": 13 },
           "refresh.interval": 300
+        }
+      ]
+    },
+    {
+      "type": "$TYPE_PRESENCE_SENSOR",
+      "restapi": "/sensors",
+      "uuid": ["$address.ext", "0x0e", "0x0406"],
+      "fingerprint": {
+        "profile": "0x0104",
+        "device": "0x0107",
+        "endpoint": "0x0e",
+        "in": ["0x0000", "0x0001", "0x0406"]
+      },
+      "items": [
+        { "name": "attr/id" },
+        { "name": "attr/lastseen" },
+        { "name": "attr/manufacturername" },
+        { "name": "attr/modelid" },
+        { "name": "attr/name" },
+        { "name": "attr/type" },
+        { "name": "attr/uniqueid" },
+        {
+          "name": "state/presence",
+          "schema": "resourceitem1.schema.json",
+          "datatype": "Bool",
+          "access": "R",
+          "public": true,
+          "description": "True when awning movement exceeds the firmware threshold (motion). Phoscon 'Motion' card.",
+          "parse": { "at": "0x0000", "cl": "0x0406", "ep": 14, "eval": "Item.val = (Attr.val & 1) != 0" },
+          "read": { "at": "0x0000", "cl": "0x0406", "ep": 14 },
+          "refresh.interval": 3600
         },
         {
           "name": "config/battery",
-          "description": "Battery percentage via Power Configuration cluster (spec §7)",
-          "parse": { "at": "0x0021", "cl": "0x0001", "ep": 13, "eval": "Item.val = Attr.val / 2" },
-          "read": { "at": "0x0021", "cl": "0x0001", "ep": 13 },
+          "description": "Battery percentage via Power Configuration cluster (spec §7). Read on ep 14 (same endpoint as the presence subdevice); firmware carries Power Config on ep 14.",
+          "parse": { "at": "0x0021", "cl": "0x0001", "ep": 14, "eval": "Item.val = Attr.val / 2" },
+          "read": { "at": "0x0021", "cl": "0x0001", "ep": 14 },
           "refresh.interval": 3600
         }
       ]
@@ -154,9 +202,15 @@
     },
     {
       "bind": "unicast",
-      "src.ep": 13,
+      "src.ep": 14,
       "cl": "0x0001",
       "report": [ { "at": "0x0021", "dt": "0x20", "min": 3600, "max": 3600, "change": "0x00" } ]
+    },
+    {
+      "bind": "unicast",
+      "src.ep": 14,
+      "cl": "0x0406",
+      "report": [ { "at": "0x0000", "dt": "0x18", "min": 1, "max": 3600, "change": "0x01" } ]
     }
   ]
 }

@@ -1,0 +1,21 @@
+# sdkconfig defaults — based on the vendor deep_sleep_end_device example (esp-zigbee-sdk),
+# the validated config for a deep-sleep Zigbee ED on the ESP32-H2. `idf.py build` seeds
+# sdkconfig from this. Change a value here, then `idf.py reconfigure` (or delete sdkconfig).
+
+# --- Partition table ---------------------------------------------------------------------
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# --- Zigbee: End Device ------------------------------------------------------------------
+CONFIG_ZB_ENABLED=y
+CONFIG_ZB_ZED=y
+
+# --- Deep sleep (verbatim from the vendor example) ---------------------------------------
+# Keep wall-clock across deep sleep via RTC, use internal RC RTC clock, and let the
+# bootloader skip image validation on a deep-sleep wake (faster, lower-power wake).
+CONFIG_NEWLIB_TIME_SYSCALL_USE_RTC_HRT=y
+CONFIG_RTC_CLK_SRC_INT_RC=y
+CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP=y
+
+# --- Logging: INFO during bring-up so ZBOSS rejoin messages show. Lower for battery. -----
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

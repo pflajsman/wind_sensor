@@ -17,10 +17,20 @@
 // and §8.10 — driving IO12 would cut the accelerometer's power in deep sleep and
 // defeat wake-on-movement; IO9's LED controller leaks current even when "off".
 
+// TEMPORARY DIAGNOSTIC: force core debug logging on at build time so the Zigbee-core
+// wrapper's log_i/log_e (carrying the post-sleep rejoin state) compile in. Must precede
+// <Arduino.h>. The Arduino IDE menu "Tools -> Core Debug Level -> Info" is the reliable
+// path; set both. Remove (and set the menu back to None) for battery builds — logging
+// costs power and boot time. 3 = INFO.
+#ifndef CORE_DEBUG_LEVEL
+#define CORE_DEBUG_LEVEL 3
+#endif
+
 #include <Arduino.h>
 #include <Wire.h>
 #include "esp_sleep.h"
 #include "driver/gpio.h"
+#include "esp_log.h"     // runtime log-level control to surface ZBOSS rejoin messages
 
 #include "config.h"
 #include "adxl345.h"
@@ -31,13 +41,24 @@ static Adxl345 accel;
 static AwningConfig cfg;
 
 // INT1 is active-high while DATA_FORMAT INT_INVERT = 0 (VAL_DATA_FORMAT, §4.4).
-// The button (IO14) is active-low. Both wake levels are encoded in EXT1_LEVEL_MASK
-// in config.h. On the ESP32-H2, deep-sleep GPIO wake is EXT1 (NOT the light-sleep
-// gpio_wakeup API), and EXT1 supports per-pin trigger levels in one call — which is
-// what lets a high-trigger INT1 and a low-trigger button share one wake config.
-// (Verified against the ESP-IDF ESP32-H2 sleep-modes docs.)
+// On the ESP32-H2, deep-sleep GPIO wake is EXT1 (NOT the light-sleep gpio_wakeup API).
+// We wake on the single accel INT1 pin (IO13, high-trigger), configured via EXT1_IO_MASK
+// in config.h. (Verified against the ESP-IDF ESP32-H2 sleep-modes docs.)
 
-static constexpr uint32_t ZB_JOIN_TIMEOUT_MS = 10000; // allow for slow ED rejoin (§8.5)
+// Join timeout. The heartbeat path can be short (it either rejoins fast or waits for
+// the next wake), but cold-boot *commissioning* regularly needs ~9-10 s of network
+// steering on the ESP32-H2 — a 10 s cap raced the clock and lost most joins
+// (observed: successes at 9.6-9.7 s). Give commissioning a comfortable margin.
+static constexpr uint32_t ZB_JOIN_TIMEOUT_MS    = 25000; // routine rejoin (heartbeat/wind).
+// A silent NWK rejoin after deep sleep can need an all-channel scan (>10 s), so give it a
+// realistic window. On timeout the firmware does NOT erase/re-steer — it just sleeps and
+// retries next wake, with the stored network intact (see zbBegin recovery logic).
+static constexpr uint32_t ZB_COMMISSION_TIMEOUT_MS = 40000; // fresh join (cold boot)
+
+// After a fresh join, stay awake this long so deCONZ can push its Bind +
+// Configure-Reporting to this sleepy ED — otherwise the binding table stays empty
+// and values never populate (see zb.cpp zbSettleForBindings / integration README).
+static constexpr uint32_t ZB_SETTLE_MS = 90000;
 
 // ---------------------------------------------------------------------------
 // Sleep entry (spec §4.4). The ORDER here matters.
@@ -47,43 +68,20 @@ static void enterDeepSleep(uint32_t timer_wake_s) {
   accel.rearmActivity();     // re-reference AC activity to current rest pos (§4.4)
   accel.clearInterrupt();    // MUST read INT_SOURCE or INT1 stays asserted -> instant-wake loop (§8.7)
 
-  // Hold the button's internal pull-up through deep sleep so IO14 idles HIGH and a
-  // press pulls it LOW to wake. Without this the pull is disabled in deep sleep and
-  // the pin could float, causing spurious or missed wakes.
-  gpio_pullup_en(PIN_BTN);
-  gpio_pulldown_dis(PIN_BTN);
-
-  // Arm EXT1 deep-sleep wake on IO13 (high) + IO14 (low) via the level mask (§4.4,
-  // §3.3). io_mask selects the pins; level_mask sets each pin's trigger level.
-  //
-  // We intentionally keep the ..._with_level_mask() call even though core 3.3.x
-  // marks it deprecated. Its suggested replacement, esp_sleep_enable_ext1_wakeup_io(),
-  // takes ONE mode for all pins (ANY_LOW or ANY_HIGH) — it cannot mix a high-trigger
-  // accel INT1 and a low-trigger button in a single wake config. Per-pin levels are
-  // still supported on the ESP32-H2 (SOC_PM_SUPPORT_EXT1_WAKEUP_MODE_PER_PIN), so the
-  // level-mask API is the correct tool here; silence just this one deprecation warning.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  esp_sleep_enable_ext1_wakeup_with_level_mask(EXT1_IO_MASK, EXT1_LEVEL_MASK);
-#pragma GCC diagnostic pop
+  // Arm EXT1 deep-sleep wake on IO13 (accel INT1, active-high) (§4.4, §3.3). With a
+  // single high-trigger pin we use the non-deprecated esp_sleep_enable_ext1_wakeup_io()
+  // in ANY_HIGH mode. (Verified against the ESP-IDF ESP32-H2 sleep-modes docs.)
+  esp_sleep_enable_ext1_wakeup_io(EXT1_IO_MASK, ESP_EXT1_WAKEUP_ANY_HIGH);
 
   if (timer_wake_s > 0) {
     esp_sleep_enable_timer_wakeup((uint64_t)timer_wake_s * 1000000ULL);
-    DBG("[sleep] ext1(IO13 hi / IO14 lo) + timer %us\n", timer_wake_s);
+    DBG("[sleep] ext1(IO13 hi) + timer %us\n", timer_wake_s);
   } else {
-    DBGLN("[sleep] ext1(IO13 hi / IO14 lo) only — PERMANENT (low-voltage lockout)");
+    DBGLN("[sleep] ext1(IO13 hi) only — PERMANENT (low-voltage lockout)");
   }
 
   Serial.flush();
   esp_deep_sleep_start();
-}
-
-// Which EXT1 pin caused this wake? esp_sleep_get_ext1_wakeup_status() returns a
-// bitmask of the pins that were asserted at wake. A button press and an accel INT
-// both land as ESP_SLEEP_WAKEUP_EXT1, so this is how we tell them apart (§4.2).
-static bool wokenByButton() {
-  uint64_t status = esp_sleep_get_ext1_wakeup_status();
-  return (status & (1ULL << PIN_BTN)) != 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,49 +161,17 @@ static void doColdBoot() {
   loadConfig(cfg);                  // NVS + defaults (§4.1.3, §9)
   accel.configureAccel(cfg.act_thresh); // full base config (§5.1)
 
-  if (!zbBegin(ZB_JOIN_TIMEOUT_MS)) {   // start ED, commission if needed (§4.1.5)
+  if (!zbBegin(ZB_COMMISSION_TIMEOUT_MS)) { // start ED, commission if needed (§4.1.5)
     DBGLN("[boot] Zigbee not connected yet — will report on next successful join");
   }
 
   accel.setOdr50();
   AccelMetrics m = accel.measureWindow(); // one measurement (§4.1.6)
-  if (zbConnected()) zbReportMetrics(m);
-  if (reportBatteryAndCheckLockout()) return;
-
-  enterDeepSleep(cfg.hb_interval);
-}
-
-// ---------------------------------------------------------------------------
-// BUTTON path (IO14 press). Short press = wake + one immediate report. If the
-// device is not on a network yet, force fresh commissioning first so the button
-// doubles as the pairing trigger the user asked for.
-// ---------------------------------------------------------------------------
-static void doButtonPress() {
-  DBGLN("[state] BUTTON");
-
-  // Simple debounce: require the pin to still read pressed a moment later, so a
-  // contact bounce or EMI spike does not count as a press.
-  delay(30);
-  if (digitalRead(PIN_BTN) != BTN_ACTIVE_LEVEL) {
-    DBGLN("[btn] bounce/no-press — going back to sleep");
-    enterDeepSleep(cfg.hb_interval);
-    return;
+  if (zbConnected()) {
+    zbReportMetrics(m);
+    // Give deCONZ its window to write bindings + reporting config before we sleep.
+    zbSettleForBindings(m, ZB_SETTLE_MS);
   }
-
-  loadConfig(cfg);
-  accel.configureAccel(cfg.act_thresh);
-
-  // Bring Zigbee up. If it can't connect (never joined, or dropped), force a fresh
-  // commissioning attempt — this is the "put it in pairing mode" action. Open the
-  // network in the coordinator (Phoscon permit-join / deCONZ Permit Join) first.
-  if (!zbBegin(ZB_JOIN_TIMEOUT_MS)) {
-    DBGLN("[btn] not connected — forcing commissioning (open the coordinator network now)");
-    zbForceCommission(ZB_JOIN_TIMEOUT_MS);
-  }
-
-  accel.setOdr50();
-  AccelMetrics m = accel.measureWindow(); // on-demand report — good for bench test
-  if (zbConnected()) zbReportMetrics(m);
   if (reportBatteryAndCheckLockout()) return;
 
   enterDeepSleep(cfg.hb_interval);
@@ -217,14 +183,23 @@ static void doButtonPress() {
 void setup() {
   DBG_BEGIN(115200);
 
+#ifdef DEBUG_SERIAL
+  // TEMPORARY DIAGNOSTIC: surface the ZBOSS / Zigbee-core log messages at runtime so a
+  // failed post-sleep rejoin prints its real reason (e.g. "Rejoin failure: no dev with
+  // xpanid", "can't choose best parent"). These come from the precompiled stack via
+  // esp_log; without this they are silent and we only see our own [zb] lines. The core
+  // wrapper's own log_i/log_e still need Core Debug Level >= Info at BUILD time to appear
+  // (Arduino IDE: Tools -> Core Debug Level -> Info), but this at least unmasks esp_log.
+  // Remove once the rejoin issue is understood — verbose logging costs power/time.
+  esp_log_level_set("*", ESP_LOG_INFO);
+#endif
+
   // I2C init (§4.1.2). ADXL345 CS must be tied HIGH in hardware to select I2C (§8.8).
   Wire.begin(PIN_SDA, PIN_SCL);
   Wire.setClock(400000);
 
   // INT1 as a plain input; the RTC/LP wake is armed at sleep time (§4.4).
   pinMode(PIN_INT1, INPUT);
-  // Button on IO14: internal pull-up, active-low. Idles HIGH, press pulls LOW.
-  pinMode(PIN_BTN, INPUT_PULLUP);
 
   // Bring up (or re-detect) the accelerometer on every wake so a hot-path wake
   // still has a valid handle. Verifies 0xE5 (§4.1.2).
@@ -244,16 +219,11 @@ void setup() {
 
   esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
   switch (cause) {
-    case ESP_SLEEP_WAKEUP_EXT1:       // IO13 accel INT (§4.2) OR IO14 button
-      if (wokenByButton()) {
-        // Button dispatch loads config / brings up Zigbee itself.
-        doButtonPress();
-      } else {
-        loadConfig(cfg);
-        accel.configureAccel(cfg.act_thresh); // ensure regs valid after wake
-        zbBegin(ZB_JOIN_TIMEOUT_MS);
-        doWindEvent();
-      }
+    case ESP_SLEEP_WAKEUP_EXT1:       // IO13 accel INT -> wind event (§4.2)
+      loadConfig(cfg);
+      accel.configureAccel(cfg.act_thresh); // ensure regs valid after wake
+      zbBegin(ZB_JOIN_TIMEOUT_MS);
+      doWindEvent();
       break;
 
     case ESP_SLEEP_WAKEUP_TIMER:      // heartbeat (§4.3)

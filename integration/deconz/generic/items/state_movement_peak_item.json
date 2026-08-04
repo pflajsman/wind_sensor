@@ -1,0 +1,8 @@
+{
+  "schema": "resourceitem1.schema.json",
+  "id": "state/movement_peak",
+  "datatype": "Double",
+  "access": "R",
+  "public": true,
+  "description": "Peak absolute deviation, mg (spec §6)."
+}

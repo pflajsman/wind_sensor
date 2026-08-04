@@ -22,13 +22,17 @@ static constexpr uint8_t EP_TILT_ROLL     = 13; // degrees
 // Returns true once connected. Blocks up to timeout_ms for the join.
 bool zbBegin(uint32_t timeout_ms);
 
-// Force a fresh commissioning / network-steering attempt (the "pairing" action,
-// triggered by the IO14 button). Open the coordinator network first (Phoscon
-// permit-join). Returns true once connected. Does NOT erase flash (§8.1).
-bool zbForceCommission(uint32_t timeout_ms);
-
 // Push one set of metrics to the four analog endpoints (§7).
 void zbReportMetrics(const AccelMetrics &m);
+
+// Stay awake for `ms` after a fresh join so the coordinator (deCONZ) can push its
+// queued Bind + Configure-Reporting requests to this sleepy end device. A sleepy ED
+// only receives those queued requests while it polls its parent; the Zigbee stack
+// runs on its own FreeRTOS task and keeps polling (default 3 s keep-alive) as long as
+// we don't deep-sleep — so this simply keeps the device alive and re-reports metrics
+// periodically to give deCONZ traffic to latch onto. Without this, the device sleeps
+// before bindings are written and the deCONZ binding table stays empty (README §Verify).
+void zbSettleForBindings(const AccelMetrics &m, uint32_t ms);
 
 // Push battery state through the standard Power Configuration cluster (§7).
 void zbReportBattery(uint8_t soc_percent, float volts);

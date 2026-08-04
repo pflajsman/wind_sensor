@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------------------
 // Serial on a sleeping battery device is a power leak and adds boot delay (§13).
 // Leave DEBUG_SERIAL undefined for battery builds; define it for bench work.
-// #define DEBUG_SERIAL
+#define DEBUG_SERIAL
 
 #ifdef DEBUG_SERIAL
   #define DBG_BEGIN(baud) do { Serial.begin(baud); delay(50); } while (0)
@@ -35,21 +35,12 @@
 static constexpr gpio_num_t PIN_SDA  = GPIO_NUM_11; // IO11 -> ADXL345 SDA
 static constexpr gpio_num_t PIN_SCL  = GPIO_NUM_10; // IO10 -> ADXL345 SCL
 static constexpr gpio_num_t PIN_INT1 = GPIO_NUM_13; // IO13 -> ADXL345 INT1 (LP wake pin, §3.3)
-static constexpr gpio_num_t PIN_BTN  = GPIO_NUM_14; // IO14 -> pairing button (spec's spare LP pin, §3.3)
-static constexpr uint8_t    PIN_VBAT = 2;           // IO2  -> on-board battery divider (§3.1)
+static constexpr uint8_t    PIN_VBAT = 3;           // IO3  -> on-board battery divider (verified on hardware; LaskaKit ESP32-H2 DEVKit)
 
-// Button wiring: momentary switch from IO14 to GND, using the internal pull-up.
-// Idle = HIGH, pressed = LOW (active-low). It wakes the device from deep sleep;
-// on the ESP32-H2 that is done with EXT1, which supports per-pin trigger levels,
-// so IO13 (active-high accel INT) and IO14 (active-low button) can share one wake
-// config. See the state machine in the .ino.
-static constexpr int BTN_ACTIVE_LEVEL = 0; // pressed reads LOW
-
-// EXT1 wake masks (ESP32-H2 deep-sleep GPIO wake is EXT1, not gpio_wakeup — verified
-// against the ESP-IDF ESP32-H2 sleep docs). io_mask = both pins we wake on; the
-// level_mask bit is 1 for a HIGH-trigger pin, 0 for LOW-trigger.
-static constexpr uint64_t EXT1_IO_MASK    = (1ULL << PIN_INT1) | (1ULL << PIN_BTN);
-static constexpr uint64_t EXT1_LEVEL_MASK = (1ULL << PIN_INT1); // INT1 high-trigger; BTN low-trigger (bit left 0)
+// EXT1 wake mask (ESP32-H2 deep-sleep GPIO wake is EXT1, not gpio_wakeup — verified
+// against the ESP-IDF ESP32-H2 sleep docs). We wake on a single pin, IO13 (accel INT1),
+// which is active-high, so a plain ANY_HIGH wake config covers it.
+static constexpr uint64_t EXT1_IO_MASK = (1ULL << PIN_INT1); // INT1 high-trigger
 
 // Pins we must NEVER drive (spec §3.2, §8.10):
 //   IO12 = uSup load switch. Driving it would cut power to the ADXL345 during
@@ -57,6 +48,18 @@ static constexpr uint64_t EXT1_LEVEL_MASK = (1ULL << PIN_INT1); // INT1 high-tri
 //   IO9  = RGB LED. Addressable LED controller draws 0.5-1 mA continuously even when
 //          showing "black". Never initialise or drive it.
 // They are intentionally absent from this map. Do not add them.
+
+// ---------------------------------------------------------------------------
+// Zigbee network channel (deCONZ/ConBee).
+// ---------------------------------------------------------------------------
+// Pinning the ED to the coordinator's single channel is Espressif's recommended fix
+// for a deep-sleep device that must rejoin on every wake: a silent rejoin then scans
+// exactly ONE channel instead of all 16, so it is fast and reliably beats the join
+// timeout. Set this to the channel your deCONZ network is on (Phoscon -> Settings ->
+// Gateway -> Advanced shows it). MUST match, or the device will never find its parent.
+// If you ever move the deCONZ network to another channel, change this and re-flash.
+static constexpr uint8_t ZB_CHANNEL = 15;               // deCONZ network channel (11..26)
+static constexpr uint32_t ZB_CHANNEL_MASK = (1UL << ZB_CHANNEL);
 
 // ---------------------------------------------------------------------------
 // Measurement window (spec §6). Not user-tunable; changing these changes the
@@ -87,11 +90,11 @@ namespace cfgdefault {
   static constexpr uint16_t QUIET_MG    = 60;
   static constexpr uint8_t  QUIET_WIN   = 3;
   static constexpr uint16_t MAX_ACTIVE  = 30;
-  // TODO(hardware): vbat_ratio 2.0 is a placeholder. Calibrate per §7 / acceptance
-  // test 4: measure the cell with a multimeter at two states of charge, compare
-  // against analogReadMilliVolts(IO2), and derive the real constant. Cross-check
-  // against the schematic in the LaskaKit repo HW/ folder.
-  static constexpr float    VBAT_RATIO  = 2.0f;
+  // LaskaKit ESP32-H2-DEVKit V2 silkscreen states the divider ratio is 1.769 on IO3.
+  // (Confirmed on hardware: cell 4.14 V -> pin should read ~2.34 V.) If you ever need
+  // to re-calibrate, measure the cell with a multimeter, compare against
+  // analogReadMilliVolts(PIN_VBAT), and derive ratio = cell / pin.
+  static constexpr float    VBAT_RATIO  = 1.769f;
 }
 
 // Load config from NVS, applying defaults on first boot. Persists any missing keys.
