@@ -63,16 +63,32 @@
 #define OCCUPANCY_DEVICE_ID 0x0107 /* ZHA "Occupancy Sensor" device id (profile 0x0104) */
 
 /* --- Pin map (LaskaKit ESP32-H2-DEVKit V2) --------------------------------------------- */
+#define PIN_SDA   GPIO_NUM_11   /* ADXL345 SDA */
+#define PIN_SCL   GPIO_NUM_10   /* ADXL345 SCL */
+#define PIN_INT1  GPIO_NUM_13   /* ADXL345 INT1, active-high, deep-sleep wake */
 #define PIN_VBAT  3             /* ADC battery divider (LaskaKit V2 IO3 = ADC1_CH2) */
 
+/* EXT1 deep-sleep wake mask: accel INT1 (active-high, ANY_HIGH). Movement asserts INT1 and
+ * wakes the device so it can re-measure occupancy and report — this is what makes the sensor
+ * "react" instead of only re-checking on the heartbeat timer. */
+#define EXT1_IO_MASK (1ULL << PIN_INT1)
+
 /* --- Heartbeat / sleep ----------------------------------------------------------------- */
-#define HB_INTERVAL_S       1800   /* 30 min heartbeat wake */
+#define HB_INTERVAL_S       1800   /* 30 min heartbeat wake (also re-evaluates occupancy) */
 
 /* --- Battery --------------------------------------------------------------------------- */
 #define VBAT_RATIO          1.769f /* LaskaKit ESP32-H2-DEVKit V2 silkscreen divider ratio (IO3) */
 
+/* --- Measurement window (drives adxl345_measure_window) --------------------------------- */
+#define SAMPLE_RATE_HZ   50
+#define WINDOW_MS        4000
+#define WINDOW_SAMPLES   ((SAMPLE_RATE_HZ * WINDOW_MS) / 1000) /* 200 */
+
+/* ADXL345 THRESH_ACT raw value (x62.5 mg). Wake sensitivity: raw 2 ~= 125 mg. */
+#define ACT_THRESH_DEFAULT  2
+
 /* --- Occupancy (the one reported value) ------------------------------------------------ */
-/* Placeholder occupancy source until real sensing is wired in: this build reports a fixed
- * boolean so the whole Zigbee/sleep/battery pipeline can be validated end to end. Replace
- * awning_is_protected() in awning_protection.c with the real measurement. */
-#define AWNING_OCCUPANCY_DEFAULT  false
+/* movement_rms (mg) at/above which occupancy reads "protected" (occupied). Derived from the
+ * accelerometer window; ONLY this boolean is reported — no analog values leave the device.
+ * Above the ~5-8 mg bench-noise floor. */
+#define OCCUPANCY_MG_THRESHOLD  60

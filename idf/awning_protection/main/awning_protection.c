@@ -29,13 +29,14 @@
 
 #include "awning_config.h"
 #include "battery.h"
+#include "adxl345.h"
 
 static const char *TAG = "AWNING_PROT";
 
 /* Set FORCE_REJOIN to 1 to make the device factory-reset + re-pair on EVERY boot, to force a
  * clean join into deCONZ (open Permit Join, flash this, let it join), then set back to 0 and
  * re-flash for normal operation. Do NOT ship with it on. */
-#define FORCE_REJOIN 1
+#define FORCE_REJOIN 0
 
 /* Wall-clock across deep sleep, like the vendor example. */
 static RTC_DATA_ATTR struct timeval s_sleep_time;
@@ -46,11 +47,27 @@ static esp_timer_handle_t s_steer_timer;    /* one-shot retry of network steerin
 /* ------------------------------------------------------------------------------------- */
 /* The one reported value                                                                 */
 /* ------------------------------------------------------------------------------------- */
-/* Awning protection state. Replace this stub with the real measurement (e.g. accel/tilt
- * threshold). Kept trivial so the join/sleep/battery/report pipeline can be validated first. */
+/* Set true once the ADXL345 is confirmed present at boot; gates the measurement below. */
+static bool s_accel_ok = false;
+
+/* Awning protection state, measured from the ADXL345. Capture one movement window and return
+ * occupied when the AC-energy movement (movement_rms) crosses the threshold. ONLY this boolean
+ * is reported over Zigbee — the analog metrics stay on-device (the DDF exposes presence only).
+ * Re-arms activity detection afterwards so the next movement re-asserts INT1 (EXT1 wake). */
 static bool awning_is_protected(void)
 {
-    return AWNING_OCCUPANCY_DEFAULT;
+    if (!s_accel_ok) return false; /* no accelerometer -> report unoccupied */
+
+    accel_metrics_t m;
+    adxl345_set_odr50();
+    adxl345_measure_window(&m);
+    adxl345_set_odr25();
+    adxl345_rearm_activity();
+
+    bool occupied = (m.movement_rms >= (float)OCCUPANCY_MG_THRESHOLD);
+    ESP_LOGI(TAG, "occupancy=%d (rms=%.1f mg, thresh=%u mg)",
+             occupied, m.movement_rms, OCCUPANCY_MG_THRESHOLD);
+    return occupied;
 }
 
 /* ------------------------------------------------------------------------------------- */
@@ -69,9 +86,12 @@ static esp_err_t deep_sleep_wakeup_config(void)
     const esp_timer_create_args_t args = { .callback = &deep_sleep_now_cb, .name = "sleep" };
     ESP_RETURN_ON_ERROR(esp_timer_create(&args, &s_sleep_timer), TAG, "timer create");
 
-    /* Timer heartbeat only — no GPIO wake source in this minimal build. */
+    /* Timer heartbeat + EXT1 wake on the accel INT1 (active-high). Movement asserts INT1 and
+     * wakes the device to re-measure + report occupancy — this is what makes it "react". */
     ESP_RETURN_ON_ERROR(esp_sleep_enable_timer_wakeup((uint64_t)HB_INTERVAL_S * 1000000ULL),
                         TAG, "timer wakeup");
+    ESP_RETURN_ON_ERROR(esp_sleep_enable_ext1_wakeup(EXT1_IO_MASK, ESP_EXT1_WAKEUP_ANY_HIGH),
+                        TAG, "ext1 wakeup");
     return ESP_OK;
 }
 
@@ -194,8 +214,12 @@ static bool app_signal_handler(const ezb_app_signal_t *app_signal)
                 report_and_sleep(SHORT_SETTLE_S);
             }
         } else {
-            ESP_LOGW(TAG, "Commissioning init failed (0x%02x) — retrying in 3s", status);
-            schedule_commissioning_retry(EZB_BDB_MODE_INITIALIZATION);
+            /* 0x03 = NO_NETWORK: the stack initialized fine but no open network was found
+             * (deCONZ Permit Join closed, wrong channel, or out of range). Retrying
+             * INITIALIZATION would loop forever — the recovery is to keep STEERING until a
+             * network opens up. Open Permit Join in deCONZ and this lands the join. */
+            ESP_LOGW(TAG, "Init/join failed (0x%02x, 3=NO_NETWORK) — retry steering in 3s", status);
+            schedule_commissioning_retry(EZB_BDB_MODE_NETWORK_STEERING);
         }
     } break;
 
@@ -304,6 +328,15 @@ void app_main(void)
 {
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(nvs_flash_init_partition(ESP_ZIGBEE_STORAGE_PARTITION_NAME));
+
+    /* Accelerometer up on every boot (I2C). Non-fatal: if it fails, occupancy just reads
+     * "not protected" rather than aborting the whole boot. */
+    if (adxl345_init() == ESP_OK) {
+        adxl345_configure(ACT_THRESH_DEFAULT);
+        s_accel_ok = true;
+    } else {
+        ESP_LOGW(TAG, "ADXL345 init failed — occupancy will read unoccupied");
+    }
 
     /* Battery ADC (non-fatal: if it fails we just report 0% rather than aborting boot). */
     if (battery_init() != ESP_OK) ESP_LOGW(TAG, "battery ADC init failed");

@@ -1,0 +1,116 @@
+# Home Assistant PACKAGE for awning-protection — via the deCONZ REST API.
+#
+# A "package" bundles sensor:/binary_sensor: into ONE file that HA merges into your config,
+# so it never collides with keys in configuration.yaml.
+#
+# NOTE: this package intentionally does NOT define `automation:` — your configuration.yaml
+# already uses `automation: !include automations.yaml`, and a package cannot also declare
+# `automation:` (that collides). Add the example automation (bottom of this comment) to your
+# automations.yaml instead, or create it in the HA UI.
+#
+# ────────────────────────────────────────────────────────────────────────────────────────
+# INSTALL (three steps, one-time)
+# ────────────────────────────────────────────────────────────────────────────────────────
+# 1. Enable packages. In configuration.yaml add a `homeassistant:` block (you don't have one):
+#
+#        homeassistant:
+#          packages: !include_dir_named packages
+#
+# 2. Create a folder `packages` next to configuration.yaml and save THIS FILE as:
+#        <HA config>/packages/awning_protection.yaml
+#
+# 3. Developer Tools -> YAML -> "Check configuration", then Restart.
+#
+# Entities created:
+#     binary_sensor.awning_protection_occupancy   <- use this in automations
+#     sensor.awning_protection_presence_raw        (raw on/off poll)
+#     sensor.awning_protection_battery             (%)
+#
+# ────────────────────────────────────────────────────────────────────────────────────────
+# BAKED-IN VALUES
+#     deCONZ API key : 7538CF4326
+#     Device IEEE    : 74:4d:bd:ff:fe:6d:58:e1
+#     deCONZ host    : http://core-deconz:40850   (HA deCONZ add-on internal hostname)
+# If HA reaches deCONZ at another address (e.g. http://192.168.1.10:40850), find/replace
+# http://core-deconz:40850 throughout this file.
+#
+# SANITY CHECK (run on the HA box; core-deconz only resolves inside HA):
+#     curl -s http://core-deconz:40850/api/7538CF4326/sensors | grep -io 'uniqueid":"[^"]*'
+# Expect a line containing 74:4d:bd:ff:fe:6d:58:e1-0a-...
+# ==========================================================================================
+
+sensor:
+  # Presence / "awning protected" boolean, polled as on/off text. Matched by IEEE only (no
+  # endpoint assumption). Converted to a proper binary_sensor below.
+  - platform: rest
+    name: "Awning protection presence raw"
+    unique_id: awning_protection_presence_raw
+    resource: "http://core-deconz:40850/api/7538CF4326/sensors"
+    scan_interval: 60
+    value_template: >
+      {% set ns = namespace(v=none) %}
+      {% for k, s in value_json.items() %}
+        {% if s.uniqueid is defined and s.uniqueid.startswith('74:4d:bd:ff:fe:6d:58:e1')
+              and s.state is defined and s.state.presence is defined %}
+          {% set ns.v = s.state.presence %}
+        {% endif %}
+      {% endfor %}
+      {{ 'on' if ns.v else 'off' }}
+
+  # Battery percentage. deCONZ may expose battery in EITHER place depending on the model:
+  #   - config.battery on the presence resource, OR
+  #   - state.battery on a separate ZHABattery resource.
+  # This reads whichever exists, across ALL of the device's sensor resources (match by IEEE
+  # only). Sleepy device: stays 'none' until the first Power Config report lands after a wake.
+  - platform: rest
+    name: "Awning protection battery"
+    unique_id: awning_protection_battery
+    resource: "http://core-deconz:40850/api/7538CF4326/sensors"
+    scan_interval: 300
+    unit_of_measurement: "%"
+    device_class: battery
+    value_template: >
+      {% set ns = namespace(v=none) %}
+      {% for k, s in value_json.items() %}
+        {% if s.uniqueid is defined and s.uniqueid.startswith('74:4d:bd:ff:fe:6d:58:e1') %}
+          {% if s.config is defined and s.config.battery is defined and s.config.battery != none %}
+            {% set ns.v = s.config.battery %}
+          {% elif s.state is defined and s.state.battery is defined and s.state.battery != none %}
+            {% set ns.v = s.state.battery %}
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+      {{ ns.v }}
+
+binary_sensor:
+  - platform: template
+    sensors:
+      awning_protection_occupancy:
+        friendly_name: "Awning protected"
+        unique_id: awning_protection_occupancy
+        device_class: occupancy
+        value_template: "{{ is_state('sensor.awning_protection_presence_raw', 'on') }}"
+        availability_template: >
+          {{ states('sensor.awning_protection_presence_raw') not in
+             ['unknown', 'unavailable', none] }}
+
+# ──────────────────────────────────────────────────────────────────────────────────────────
+# EXAMPLE AUTOMATION — add this to your automations.yaml (NOT here). Replace cover.awning with
+# your real cover entity (you have a `cover.ewelink_virtual_cover` template cover you could
+# target). The close point is tuned in FIRMWARE (OCCUPANCY_MG_THRESHOLD), not in HA.
+#
+#   - alias: "Awning: close when protection triggers"
+#     trigger:
+#       - platform: state
+#         entity_id: binary_sensor.awning_protection_occupancy
+#         to: "on"
+#         for:
+#           seconds: 10
+#     condition:
+#       - condition: template
+#         value_template: "{{ states('cover.awning') != 'closed' }}"
+#     action:
+#       - service: cover.close_cover
+#         target:
+#           entity_id: cover.awning
+# ──────────────────────────────────────────────────────────────────────────────────────────
