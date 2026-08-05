@@ -58,6 +58,9 @@ void adxl345_configure(uint8_t act_thresh_raw);
 void adxl345_set_odr50(void);
 void adxl345_set_odr25(void);
 
+/* Set the ACTIVITY threshold live (THRESH_ACT raw units, 62.5 mg/LSB; clamp to >=1). */
+void adxl345_set_act_thresh(uint8_t raw);
+
 /* Re-reference + re-arm AC activity before sleep. */
 void adxl345_rearm_activity(void);
 

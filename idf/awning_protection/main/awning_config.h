@@ -105,22 +105,26 @@
 #define WINDOW_MS        4000
 #define WINDOW_SAMPLES   ((SAMPLE_RATE_HZ * WINDOW_MS) / 1000) /* 200 */
 
-/* ADXL345 THRESH_ACT raw value (x62.5 mg). Wake sensitivity: raw 2 ~= 125 mg. */
+/* --- Sensitivity: ADXL345 ACTIVITY threshold (the ONE knob that gates occupancy) ------- */
+/* THRESH_ACT (0x24) raw units, 62.5 mg/LSB. When acceleration activity crosses this, the ADXL
+ * fires INT1 and occupancy latches OCCUPIED. This is the real sensitivity control:
+ *   raw  1 ≈   62 mg  (very twitchy)
+ *   raw  2 ≈  125 mg  (default — a light nudge)
+ *   raw  4 ≈  250 mg
+ *   raw  8 ≈  500 mg  (needs a firm shake)
+ *   raw 16 ≈ 1000 mg  (a real gust / knock)
+ * Runtime-writable over Zigbee (see below); this is only the power-on default before any
+ * write / NVS value exists. */
 #define ACT_THRESH_DEFAULT  2
 
-/* --- Occupancy (the one reported value) ------------------------------------------------ */
-/* movement_rms (mg) at/above which occupancy reads "protected" (occupied). Derived from the
- * accelerometer window; ONLY this boolean is reported — no analog values leave the device.
- * Above the ~5-8 mg bench-noise floor. */
-#define OCCUPANCY_MG_THRESHOLD  60   /* power-on default; runtime value is writable (see below) */
-
-/* --- Runtime-tunable threshold --------------------------------------------------------- */
-/* The occupancy threshold is exposed as the standard Occupancy Sensing attribute
- * PIRUnoccupiedToOccupiedThreshold (0x0012, uint8). Its value IS the movement_rms threshold
- * in mg — write 1..254 from deCONZ (ZCL write attr, or a DDF-mapped config field) to retune
- * live, no reflash. The written value is persisted in NVS so it survives sleep + power-cycle.
- * On first boot (no NVS entry yet) it seeds from OCCUPANCY_MG_THRESHOLD above. */
+/* --- Runtime-tunable sensitivity ------------------------------------------------------- */
+/* The ADXL activity threshold is exposed as the Occupancy Sensing attribute
+ * PIRUnoccupiedToOccupiedThreshold (0x0012, uint8). The attribute value IS the raw THRESH_ACT
+ * setting (62.5 mg/LSB) — write 1..255 from deCONZ (ZCL write attr, or a DDF-mapped config
+ * field) to retune sensitivity live, no reflash. It is applied to the ADXL immediately and
+ * persisted in NVS so it survives sleep + power-cycle. On first boot (no NVS entry yet) it
+ * seeds from ACT_THRESH_DEFAULT. Multiply by 62.5 for the approx mg trigger level. */
 #define THRESH_NVS_NAMESPACE  "awning"
-#define THRESH_NVS_KEY        "occ_thresh"
-#define THRESH_MG_MIN         1u
-#define THRESH_MG_MAX         254u   /* uint8 attr ceiling; plenty for a shake threshold */
+#define THRESH_NVS_KEY        "act_thresh"   /* raw THRESH_ACT units (was mg RMS pre-rework) */
+#define THRESH_RAW_MIN        1u             /* 0 disables activity detection entirely */
+#define THRESH_RAW_MAX        255u           /* uint8 register ceiling (~15.9 g) */

@@ -99,6 +99,14 @@ void adxl345_configure(uint8_t act_thresh_raw)
 void adxl345_set_odr50(void) { write_reg(ADXL_BW_RATE, VAL_BW_RATE_50HZ); }
 void adxl345_set_odr25(void) { write_reg(ADXL_BW_RATE, VAL_BW_RATE_25HZ); }
 
+/* Set the ACTIVITY threshold live (THRESH_ACT, 62.5 mg/LSB). raw 0 disables detection, so the
+ * caller should clamp to >=1. Re-reads INT_SOURCE to re-arm cleanly at the new threshold. */
+void adxl345_set_act_thresh(uint8_t raw)
+{
+    write_reg(ADXL_THRESH_ACT, raw);
+    adxl345_clear_interrupt();
+}
+
 uint8_t adxl345_clear_interrupt(void) { return read_reg(ADXL_INT_SOURCE); }
 
 /* True if the ACTIVITY interrupt has fired since the last INT_SOURCE read. Reading INT_SOURCE

@@ -69,34 +69,36 @@ static volatile bool s_joined = false;
 /* Set true once the ADXL345 is confirmed present at boot; gates the measurement below. */
 static bool s_accel_ok = false;
 
-/* Live occupancy threshold (movement_rms mg). Seeded from NVS on boot, defaulting to
- * OCCUPANCY_MG_THRESHOLD when unset. Writable at runtime via ZCL attr 0x0012 -> the write
- * handler updates this + persists it. Plain static now suffices (light sleep preserves all
- * RAM); RTC_DATA_ATTR is kept as a harmless belt-and-braces so the value would also survive a
- * deep-sleep wake if this ever ran on deep sleep again. NVS load still runs on cold boot. */
-static RTC_DATA_ATTR uint8_t s_occ_thresh_mg = OCCUPANCY_MG_THRESHOLD;
+/* Live sensitivity = ADXL345 THRESH_ACT raw units (62.5 mg/LSB). Seeded from NVS on boot,
+ * defaulting to ACT_THRESH_DEFAULT when unset. Writable at runtime via ZCL attr 0x0012 -> the
+ * write handler applies it to the ADXL live + persists it. RTC_DATA_ATTR is harmless belt-and-
+ * braces (light sleep preserves RAM anyway). NVS load runs on cold boot. */
+static RTC_DATA_ATTR uint8_t s_act_thresh = ACT_THRESH_DEFAULT;
 
-/* Load persisted threshold from NVS into s_occ_thresh_mg (called once on cold boot). Leaves
- * the default in place if the key doesn't exist yet or NVS can't be opened. */
+/* Load persisted sensitivity from NVS into s_act_thresh (called once on cold boot, BEFORE
+ * adxl345_configure so the ADXL comes up at the saved threshold). Leaves the default in place
+ * if the key doesn't exist yet or NVS can't be opened. */
 static void threshold_load_from_nvs(void)
 {
     nvs_handle_t h;
     if (nvs_open(THRESH_NVS_NAMESPACE, NVS_READONLY, &h) != ESP_OK) return;
     uint8_t v;
-    if (nvs_get_u8(h, THRESH_NVS_KEY, &v) == ESP_OK && v >= THRESH_MG_MIN && v <= THRESH_MG_MAX) {
-        s_occ_thresh_mg = v;
-        ESP_LOGI(TAG, "threshold loaded from NVS: %u mg", v);
+    /* Upper bound is the uint8 ceiling (THRESH_RAW_MAX == 255), so only the lower bound needs a
+     * runtime check — a `v <= 255` test would be a dead comparison (-Werror=type-limits). */
+    if (nvs_get_u8(h, THRESH_NVS_KEY, &v) == ESP_OK && v >= THRESH_RAW_MIN) {
+        s_act_thresh = v;
+        ESP_LOGI(TAG, "sensitivity loaded from NVS: THRESH_ACT raw=%u (~%u mg)", v, (unsigned)(v * 62.5f));
     }
     nvs_close(h);
 }
 
-/* Persist a new threshold (already range-checked by the caller). Best-effort: a failed write
+/* Persist a new sensitivity (already range-checked by the caller). Best-effort: a failed write
  * only means it won't survive a *cold* boot; the RAM/RTC copy is still updated. */
 static void threshold_save_to_nvs(uint8_t v)
 {
     nvs_handle_t h;
     if (nvs_open(THRESH_NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
-        ESP_LOGW(TAG, "threshold NVS open failed — new value not persisted");
+        ESP_LOGW(TAG, "sensitivity NVS open failed — new value not persisted");
         return;
     }
     if (nvs_set_u8(h, THRESH_NVS_KEY, v) == ESP_OK) nvs_commit(h);
@@ -115,7 +117,8 @@ static void awning_log_movement(void)
     adxl345_set_odr50();
     adxl345_measure_window(&m);
     adxl345_set_odr25();
-    ESP_LOGI(TAG, "movement window rms=%.1f mg (thresh %u mg)", m.movement_rms, s_occ_thresh_mg);
+    ESP_LOGI(TAG, "movement window rms=%.1f mg (act thresh raw=%u ~%u mg)",
+             m.movement_rms, s_act_thresh, (unsigned)(s_act_thresh * 62.5f));
 }
 
 /* ------------------------------------------------------------------------------------- */
@@ -340,10 +343,10 @@ static uint32_t schedule_commissioning_retry(uint8_t mode)
 }
 
 /* ------------------------------------------------------------------------------------- */
-/* ZCL attribute-write handler — lets deCONZ/HA retune the occupancy threshold live.       */
-/* The threshold rides on Occupancy Sensing attr 0x0012 (PIRUnoccupiedToOccupiedThreshold,  */
-/* uint8); its value IS the movement_rms mg threshold. On write we clamp, update the live   */
-/* copy, and persist to NVS so it survives sleep + power-cycle.                             */
+/* ZCL attribute-write handler — lets deCONZ/HA retune sensitivity live.                    */
+/* Sensitivity rides on Occupancy Sensing attr 0x0012 (PIRUnoccupiedToOccupiedThreshold,     */
+/* uint8); its value IS the ADXL THRESH_ACT raw setting (62.5 mg/LSB). On write we clamp,     */
+/* apply it to the ADXL immediately, and persist to NVS so it survives sleep + power-cycle.   */
 /* ------------------------------------------------------------------------------------- */
 static void zcl_action_handler(ezb_zcl_core_action_callback_id_t cb_id, void *message)
 {
@@ -357,12 +360,13 @@ static void zcl_action_handler(ezb_zcl_core_action_callback_id_t cb_id, void *me
     }
 
     uint8_t v = *(const uint8_t *)m->in.attribute.data.value;
-    if (v < THRESH_MG_MIN) v = THRESH_MG_MIN;
-    if (v > THRESH_MG_MAX) v = THRESH_MG_MAX;
+    if (v < THRESH_RAW_MIN) v = THRESH_RAW_MIN; /* upper clamp unneeded: v is uint8, max == 255 */
 
-    s_occ_thresh_mg = v;
+    s_act_thresh = v;
+    if (s_accel_ok) adxl345_set_act_thresh(v);   /* apply to hardware right now */
     threshold_save_to_nvs(v);
-    ESP_LOGI(TAG, "occupancy threshold set to %u mg (persisted)", v);
+    ESP_LOGI(TAG, "sensitivity set to THRESH_ACT raw=%u (~%u mg, persisted)",
+             v, (unsigned)(v * 62.5f));
 }
 
 /* ------------------------------------------------------------------------------------- */
@@ -493,12 +497,12 @@ static ezb_af_ep_desc_t make_awning_endpoint(void)
     };
     ezb_zcl_cluster_desc_t occ =
         ezb_zcl_occupancy_sensing_create_cluster_desc(&occ_cfg, EZB_ZCL_CLUSTER_SERVER);
-    /* Runtime-tunable threshold: PIRUnoccupiedToOccupiedThreshold (0x0012, uint8) carries the
-     * movement_rms mg threshold. Seed from the live value (already loaded from NVS on boot) so
-     * a reader sees the persisted setting. Writes land in zcl_action_handler(). */
+    /* Runtime-tunable sensitivity: PIRUnoccupiedToOccupiedThreshold (0x0012, uint8) carries the
+     * ADXL THRESH_ACT raw value (62.5 mg/LSB). Seed from the live value (already loaded from NVS
+     * on boot) so a reader sees the persisted setting. Writes land in zcl_action_handler(). */
     ezb_zcl_occupancy_sensing_cluster_desc_add_attr(
         occ, EZB_ZCL_ATTR_OCCUPANCY_SENSING_PIR_UNOCCUPIED_TO_OCCUPIED_THRESHOLD_ID,
-        &s_occ_thresh_mg);
+        &s_act_thresh);
     ezb_af_endpoint_add_cluster_desc(ep, occ);
 
     return ep;
@@ -543,15 +547,16 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(nvs_flash_init_partition(ESP_ZIGBEE_STORAGE_PARTITION_NAME));
 
-    /* Occupancy threshold: NVS is the source of truth. Load it before the endpoint is built so
-     * attr 0x0012 seeds with the persisted value (used by the awning_log_movement diagnostic;
-     * the occupancy decision itself is now the ADXL activity latch). */
+    /* Sensitivity: NVS is the source of truth. Load it before the ADXL is configured (so it
+     * comes up at the saved THRESH_ACT) and before the endpoint is built (so attr 0x0012 seeds
+     * with the persisted value). */
     threshold_load_from_nvs();
 
     /* Accelerometer up on every boot (I2C). Non-fatal: if it fails, occupancy just reads
-     * "not protected" rather than aborting the whole boot. */
+     * "not protected" rather than aborting the whole boot. Configure at the persisted (or
+     * default) sensitivity. */
     if (adxl345_init() == ESP_OK) {
-        adxl345_configure(ACT_THRESH_DEFAULT);
+        adxl345_configure(s_act_thresh);
         s_accel_ok = true;
     } else {
         ESP_LOGW(TAG, "ADXL345 init failed — occupancy will read unoccupied");
