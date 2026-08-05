@@ -1,5 +1,5 @@
-# sdkconfig defaults — based on the vendor deep_sleep_end_device example (esp-zigbee-sdk),
-# the validated config for a deep-sleep Zigbee ED on the ESP32-H2. `idf.py build` seeds
+# sdkconfig defaults — based on the vendor light_sleep_end_device example (esp-zigbee-sdk),
+# the validated config for a LIGHT-sleep Zigbee ED on the ESP32-H2. `idf.py build` seeds
 # sdkconfig from this. Change a value here, then `idf.py reconfigure` (or delete sdkconfig).
 
 # --- Partition table ---------------------------------------------------------------------
@@ -10,12 +10,16 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_ZB_ENABLED=y
 CONFIG_ZB_ZED=y
 
-# --- Deep sleep (verbatim from the vendor example) ---------------------------------------
-# Keep wall-clock across deep sleep via RTC, use internal RC RTC clock, and let the
-# bootloader skip image validation on a deep-sleep wake (faster, lower-power wake).
-CONFIG_NEWLIB_TIME_SYSCALL_USE_RTC_HRT=y
-CONFIG_RTC_CLK_SRC_INT_RC=y
-CONFIG_BOOTLOADER_SKIP_VALIDATE_IN_DEEP_SLEEP=y
+# --- Light sleep (verbatim from the vendor light_sleep_end_device example) ---------------
+# Tickless idle + power management: the CPU light-sleeps between work while the Zigbee stack
+# parks/wakes the radio around its poll timer. The ZED long-poll keeps running, so the parent
+# link stays alive (no aging-out, no rejoin race — the whole reason we left deep sleep).
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=y
+CONFIG_IEEE802154_SLEEP_ENABLE=y
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_SLEEP_POWER_DOWN_FLASH=y
 
-# --- Logging: INFO during bring-up so ZBOSS rejoin messages show. Lower for battery. -----
+# --- Logging: INFO during bring-up so join/poll messages show. Lower for battery. --------
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y

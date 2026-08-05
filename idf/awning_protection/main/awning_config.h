@@ -47,28 +47,18 @@
         .platform_config = ESP_ZIGBEE_PLATFORM_CONFIG(), \
     }
 
-/* --- Settle windows (sleepy-ED timing) ------------------------------------------------- */
-/* After a FRESH JOIN, stay awake this long so deCONZ can read our simple descriptor and push
- * Bind + Configure-Reporting (a sleepy ED only gets those while awake). On a routine wake we
- * sleep after SHORT_SETTLE_S. */
-#define FRESH_JOIN_SETTLE_S  180   /* deCONZ descriptor read + bind + report-config */
-#define SHORT_SETTLE_S        20   /* routine wake: single endpoint, so short is fine */
-
-/* Motion-hold: if the settle window ends while movement is STILL active, the device would
- * sleep reporting occupancy=1 and — because INT1 only fires on new motion, not on motion
- * stopping — nothing would wake it to report the eventual stop until the 30-min heartbeat.
- * So while occupancy reads 1, we keep re-extending the awake window by SHORT_SETTLE_S each
- * cycle, up to MOTION_HOLD_MAX_S total, so we can observe and report the clean occupancy=0
- * before sleeping. The cap bounds battery cost of a long continuous disturbance. */
-#define MOTION_HOLD_MAX_S    300   /* max awake while motion persists (battery guard) */
-
-/* Early-sleep on quiet wakes: if a routine wake reads UNOCCUPIED (movement below threshold),
- * there's no motion-stop to wait for. We still give deCONZ one short grace window to flush any
- * queued read/write (e.g. a config/sensitivity change) before sleeping, then cut the settle
- * short instead of burning the full SHORT_SETTLE_S with the radio on. Saves battery on the
- * common heartbeat-wake-with-no-motion case. Not applied to a FRESH_JOIN settle (bind/report
- * config needs the long window regardless of occupancy). */
-#define QUIET_GRACE_S          5   /* deCONZ flush window before early sleep when unoccupied */
+/* --- Sleep model: Zigbee LIGHT sleep (not deep sleep) ----------------------------------- */
+/* This firmware uses IDF power management light sleep (tickless idle), NOT deep sleep. In
+ * light sleep the ZED long-poll (keep_alive below) keeps running, so the coordinator never
+ * ages the device out and the parent link never drops — no rejoin race, reports land
+ * instantly. There is therefore NO settle window / motion-hold / early-sleep state machine
+ * anymore (all of which only existed to survive the deep-sleep rejoin gap). The stack sleeps
+ * and wakes the radio automatically around its poll timer; the app never gates sleep. See the
+ * vendor example esp-zigbee-sdk/examples/sleepy_devices/light_sleep_end_device.
+ *
+ * NOTE (2.x ezbee SDK): there is no esp_zb_sleep_now()/CAN_SLEEP signal (1.x only; the compat
+ * macros are empty stubs). Light sleep is enabled purely by esp_pm_configure() in app_main
+ * plus the CONFIG_PM_* / tickless-idle flags in sdkconfig.defaults. */
 
 /* --- Single endpoint -------------------------------------------------------------------- */
 /* One endpoint carries everything: Basic + Identify + Power Config (battery) + Occupancy
@@ -81,16 +71,31 @@
 /* --- Pin map (LaskaKit ESP32-H2-DEVKit V2) --------------------------------------------- */
 #define PIN_SDA   GPIO_NUM_11   /* ADXL345 SDA */
 #define PIN_SCL   GPIO_NUM_10   /* ADXL345 SCL */
-#define PIN_INT1  GPIO_NUM_13   /* ADXL345 INT1, active-high, deep-sleep wake */
+#define PIN_INT1  GPIO_NUM_13   /* ADXL345 INT1, active-high; EXT1 light-sleep wake (RTC IO) */
 #define PIN_VBAT  3             /* ADC battery divider (LaskaKit V2 IO3 = ADC1_CH2) */
 
-/* EXT1 deep-sleep wake mask: accel INT1 (active-high, ANY_HIGH). Movement asserts INT1 and
- * wakes the device so it can re-measure occupancy and report — this is what makes the sensor
- * "react" instead of only re-checking on the heartbeat timer. */
-#define EXT1_IO_MASK (1ULL << PIN_INT1)
+/* Light-sleep wake on the accel INT1 (active-high). Movement asserts INT1, which brings the
+ * CPU out of light sleep via EXT1 (the always-on RTC domain — required because we power down
+ * the GPIO peripheral in sleep, which disables the plain GPIO-wake path on the H2). A normal
+ * GPIO edge ISR then notifies the report task, which re-measures + reports immediately — this
+ * is what makes the sensor "react" between heartbeats. GPIO13 is RTC-capable, so it is a legal
+ * EXT1 pin. */
 
-/* --- Heartbeat / sleep ----------------------------------------------------------------- */
-#define HB_INTERVAL_S       1800   /* 30 min heartbeat wake (also re-evaluates occupancy) */
+/* --- Heartbeat --------------------------------------------------------------------------- */
+/* Periodic occupancy + battery refresh. Occupancy still reacts instantly to motion via INT1;
+ * this is just the keep-fresh cadence. 30 min is fine on battery now that the radio idles in
+ * light sleep rather than paying a rejoin every wake. */
+#define HB_INTERVAL_S       1800   /* 30 min heartbeat report (occupancy + battery) */
+
+/* --- Motion-latch occupancy ------------------------------------------------------------ */
+/* Occupancy is driven by the ADXL345 ACTIVITY interrupt, not a re-measured RMS window: when
+ * activity fires (movement crossed THRESH_ACT), occupancy latches OCCUPIED immediately. It
+ * clears back to UNOCCUPIED after OCCUPANCY_CLEAR_S with no further activity. The report task
+ * polls the ADXL activity flag every MOTION_POLL_S — short enough to notice motion promptly
+ * after an EXT1 light-sleep wake (the GPIO edge ISR can be missed across the sleep isolation),
+ * long enough that the CPU still light-sleeps between polls. */
+#define MOTION_POLL_S         1    /* how often the report task checks the ADXL activity flag */
+#define OCCUPANCY_CLEAR_S    30    /* quiet time before occupancy latches back to unoccupied */
 
 /* --- Battery --------------------------------------------------------------------------- */
 #define VBAT_RATIO          1.769f /* LaskaKit ESP32-H2-DEVKit V2 silkscreen divider ratio (IO3) */

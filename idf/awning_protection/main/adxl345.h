@@ -64,5 +64,8 @@ void adxl345_rearm_activity(void);
 /* Read INT_SOURCE to clear INT1. Returns the register value. */
 uint8_t adxl345_clear_interrupt(void);
 
+/* True if the ACTIVITY interrupt fired since the last INT_SOURCE read (also clears/re-arms). */
+bool adxl345_activity_fired(void);
+
 /* Capture one WINDOW_SAMPLES window and compute metrics. */
 void adxl345_measure_window(accel_metrics_t *out);

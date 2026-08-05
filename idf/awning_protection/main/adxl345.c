@@ -101,6 +101,14 @@ void adxl345_set_odr25(void) { write_reg(ADXL_BW_RATE, VAL_BW_RATE_25HZ); }
 
 uint8_t adxl345_clear_interrupt(void) { return read_reg(ADXL_INT_SOURCE); }
 
+/* True if the ACTIVITY interrupt has fired since the last INT_SOURCE read. Reading INT_SOURCE
+ * also deasserts INT1 (and thus re-arms it for the next activity edge), so this doubles as the
+ * "consume + re-arm" step. VAL_INT_ENABLE (0x10) is the ACTIVITY bit. */
+bool adxl345_activity_fired(void)
+{
+    return (read_reg(ADXL_INT_SOURCE) & 0x10) != 0;
+}
+
 void adxl345_rearm_activity(void)
 {
     write_reg(ADXL_INT_ENABLE, 0x00);
