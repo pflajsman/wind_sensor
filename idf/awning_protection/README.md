@@ -98,3 +98,37 @@ sensitivity loaded from NVS: THRESH_ACT raw=8 (~500 mg)
 | `main/adxl345.c` / `.h` | ADXL345 driver (activity interrupt, live threshold, movement window) |
 | `main/battery.c` / `.h` | Battery divider read + SoC |
 | `sdkconfig.defaults` | Light-sleep config (PM, tickless idle, radio power-down) |
+
+See [`TECHNICAL.md`](TECHNICAL.md) for the architecture (light sleep, motion latch, wake
+path, Zigbee/DDF, known gotchas).
+
+## Mounting & housing
+
+**Orientation does not matter for detection.** The accelerometer is configured for
+**AC-coupled activity on all three axes (X+Y+Z)**: it detects *changes* in acceleration and
+continuously re-references gravity as zero, so it triggers on movement in any direction
+regardless of which way the housing points — flat, on its side, upside down, tilted. The
+firmware never uses tilt/angle for the occupancy decision. Mount the box whichever way fits.
+
+What **does** matter, in priority order:
+
+1. **Rigid coupling to a moving part of the awning.** The sensor only detects awning
+   movement as well as the housing transmits it. Fix the housing firmly to the **front bar /
+   lead rail or an arm** — a part that actually moves — not to the wall bracket or a part
+   that stays still. Avoid rubber/foam-damped mounts: they absorb the vibration you want to
+   sense, forcing a lower threshold and inviting false triggers.
+2. **Board fixed inside the housing.** The PCB must move *with* the case. If it can rattle,
+   it generates its own spurious motion and mutes real movement. Screw or foam-lock it solid.
+3. **Antenna clearance.** The ESP32-H2-DEVKit V2 has a **PCB trace antenna**. Keep that edge
+   of the board away from the awning's aluminium (metal detunes/blocks it) and behind an
+   RF-transparent (plastic) wall — never a metallic/foil-lined enclosure. Face the antenna
+   edge outward, toward the coordinator.
+4. **Cable strain relief.** Anchor the ADXL/I²C and battery leads — awning vibration will
+   eventually fatigue unsupported wires/joints.
+5. **Weather sealing (outdoor).** The devkit and 18650 are not weatherproof bare — use at
+   least an IP54-ish enclosure with a gland/drip-loop for any cable entry.
+
+> Because detection triggers on **any** axis, a mount that also picks up unrelated vibration
+> (a shared wall transmitting door slams, an arm buzzing in traffic) will false-trigger no
+> matter the orientation. Fix it with a better mounting point or a higher sensitivity value
+> — not by rotating the housing.
