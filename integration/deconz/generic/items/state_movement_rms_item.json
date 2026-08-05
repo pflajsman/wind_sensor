@@ -1,8 +1,0 @@
-{
-  "schema": "resourceitem1.schema.json",
-  "id": "state/movement_rms",
-  "datatype": "Double",
-  "access": "R",
-  "public": true,
-  "description": "AC-energy movement intensity, mg (spec §6)."
-}

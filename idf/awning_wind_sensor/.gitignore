@@ -1,6 +1,0 @@
-# ESP-IDF build + managed component artifacts
-build/
-managed_components/
-dependencies.lock
-sdkconfig
-sdkconfig.old

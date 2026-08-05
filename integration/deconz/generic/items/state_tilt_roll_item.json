@@ -1,8 +1,0 @@
-{
-  "schema": "resourceitem1.schema.json",
-  "id": "state/tilt_roll",
-  "datatype": "Double",
-  "access": "R",
-  "public": true,
-  "description": "Mean-vector roll, degrees (spec §6)."
-}
