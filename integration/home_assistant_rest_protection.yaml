@@ -84,7 +84,7 @@ sensor:
           {% endif %}
         {% endif %}
       {% endfor %}
-      {{ ns.v }}
+      {% if ns.v is not none %}{{ ns.v }}{% endif %}
 
 # ==========================================================================================
 # BINARY SENSOR — turns the presence text sensor above into a real occupancy binary_sensor.

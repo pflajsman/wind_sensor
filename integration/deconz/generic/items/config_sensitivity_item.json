@@ -1,0 +1,13 @@
+{
+  "schema": "resourceitem1.schema.json",
+  "id": "config/sensitivity",
+  "datatype": "UInt8",
+  "access": "RW",
+  "public": true,
+  "range": [
+    1,
+    254
+  ],
+  "description": "Awning movement threshold in milli-g (mg). The device reports 'protected' when measured movement RMS reaches this value. Lower = more sensitive, higher = less. Written to Occupancy Sensing PIRUnoccupiedToOccupiedThreshold (0x0012); the device persists it in NVS.",
+  "default": 60
+}

@@ -45,6 +45,14 @@
           "parse": { "at": "0x0021", "cl": "0x0001", "ep": 10, "eval": "Item.val = Attr.val / 2" },
           "read": { "at": "0x0021", "cl": "0x0001", "ep": 10 },
           "refresh.interval": 3600
+        },
+        {
+          "name": "config/sensitivity",
+          "description": "Movement threshold in mg (Occupancy Sensing PIRUnoccupiedToOccupiedThreshold 0x0012). Lower = more sensitive. Writable at runtime; the device persists it in NVS. Sleepy ED: a write is queued and applied on the device's next wake.",
+          "parse": { "at": "0x0012", "cl": "0x0406", "ep": 10, "eval": "Item.val = Attr.val" },
+          "read":  { "at": "0x0012", "cl": "0x0406", "ep": 10 },
+          "write": { "at": "0x0012", "cl": "0x0406", "ep": 10, "dt": "0x20", "eval": "Attr.val = Item.val" },
+          "refresh.interval": 3600
         }
       ]
     }

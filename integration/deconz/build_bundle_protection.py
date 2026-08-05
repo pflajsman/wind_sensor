@@ -5,7 +5,7 @@ Build a deCONZ DDF bundle (.ddb) for awning-protection, entirely offline.
 Same RIFF/DDFB container format as build_bundle.py (verified against a real store
 bundle), but for the minimal single-endpoint awning_protection.json — so it packs
 only the generic items that DDF actually references (the 9 attr_* items plus
-state/presence and config/battery). No movement/tilt items.
+state/presence, config/battery and config/sensitivity). No movement/tilt items.
 
     RIFF <size> DDFB <size>
         DESC <size> {json metadata}
@@ -44,6 +44,7 @@ GENERIC_FILES = [
     "generic/items/attr_type_item.json",
     "generic/items/attr_uniqueid_item.json",
     "generic/items/config_battery_item.json",
+    "generic/items/config_sensitivity_item.json",
     "generic/items/state_presence_item.json",
 ]
 
