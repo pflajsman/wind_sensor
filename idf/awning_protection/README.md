@@ -100,8 +100,10 @@ sensitivity loaded from NVS: THRESH_ACT raw=8 (~500 mg)
 | `sdkconfig.defaults` | Light-sleep config (PM, tickless idle, radio power-down) |
 
 See [`TECHNICAL.md`](TECHNICAL.md) for the architecture (light sleep, motion latch, wake
-path, Zigbee/DDF, known gotchas), and [`POWER_TUNING.md`](POWER_TUNING.md) for
-battery-saving knobs to reach for if the battery drains too fast (none applied yet).
+path, Zigbee/DDF, known gotchas), [`POWER_TUNING.md`](POWER_TUNING.md) for
+battery-saving knobs to reach for if the battery drains too fast (none applied yet), and
+[`MOTION_CLASSIFIER_DESIGN.md`](MOTION_CLASSIFIER_DESIGN.md) for the proposed
+open/close-vs-wind discriminator (design only, not yet implemented).
 
 ## Mounting & housing
 
