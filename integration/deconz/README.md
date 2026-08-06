@@ -1,104 +1,101 @@
 # deCONZ integration (ConBee II + Phoscon)
 
-For setups where the ConBee II runs **deCONZ**, not Zigbee2MQTT. (A single ConBee II
-cannot serve deCONZ and Z2M at the same time — pick one.) The firmware is unchanged:
-it is a standard Zigbee end device with four Analog Input endpoints and the standard
-battery cluster, so only the host-side mapping differs from the Z2M path.
+DDF and install steps for the **awning_protection** firmware on a ConBee II running
+**deCONZ** (not Zigbee2MQTT — a single ConBee II can serve only one). Verified for
+**deCONZ 2.33.2**.
 
-Verified for **deCONZ 2.33.2** (modern DDF support; well past the 2.23 cutoff).
+The device is a Zigbee **sleepy end device** with **one endpoint (0x0a / 10)** carrying
+Basic (0x0000), Identify (0x0003), Power Configuration (0x0001, battery) and Occupancy
+Sensing (0x0406). Occupancy is the single "awning protected" value; the sensitivity knob
+rides on the Occupancy `PIRUnoccupiedToOccupiedThreshold` attribute (0x0012).
 
 ## What this maps
 
-| deCONZ state item | Source | Unit |
+| deCONZ item | Source | Meaning |
 |---|---|---|
-| `state/movement_rms`  | endpoint 10, cluster 0x000C attr 0x0055 | mg |
-| `state/movement_peak` | endpoint 11, cluster 0x000C attr 0x0055 | mg |
-| `state/tilt_pitch`    | endpoint 12, cluster 0x000C attr 0x0055 | deg |
-| `state/tilt_roll`     | endpoint 13, cluster 0x000C attr 0x0055 | deg |
-| `config/battery`      | endpoint 13, Power Configuration 0x0001 attr 0x0021 | % |
+| `state/presence`   | ep 10, Occupancy Sensing 0x0406 attr 0x0000 (bit 0) | awning protected (occupied) — a Phoscon **Motion** card |
+| `config/battery`   | ep 10, Power Config 0x0001 attr 0x0021 (÷2)          | battery % |
+| `config/sensitivity` | ep 10, Occupancy 0x0406 attr **0x0012** (writable) | ADXL activity threshold, raw units (×62.5 = mg). Lower = more sensitive. |
 
-`0x0055` is `presentValue` of the Analog Input cluster; `0x39` is the ZCL `single`
-(float) type. Battery attr `0x0021` is ZCL BatteryPercentageRemaining, reported in
-half-percent units, hence the `/2` in the parse.
+Single endpoint = single fingerprint, so deCONZ instantiates the `ZHAPresence` sensor
+(Phoscon "Motion" card) cleanly on pair. See the main firmware README for the full
+sensitivity table (`../../idf/awning_protection/README.md`).
 
-## About the file suffix and where DDFs live
+> **Sensitivity is written live.** `config/sensitivity` is the raw ADXL `THRESH_ACT`
+> value (1–255). The firmware applies it to the accelerometer immediately and persists it
+> to NVS. Because the device is a sleepy ED, a write from deCONZ is queued and takes effect
+> on the device's next wake.
 
-A "DDF" is stored **as a `.json` file** — that IS the correct extension. deCONZ's own
-bundled device files are `.json` too; the `"schema": "devcap1.schema.json"` line at the
-top of ours is what marks the JSON as a device-capability DDF. So `awning_wind_sensor.json`
-is named correctly; there is no separate `.ddf` extension.
+## Files
 
-**You cannot upload a DDF through the Phoscon web app.** Phoscon is only the
-network/pairing front-end and has no DDF management. DDFs are a deCONZ *core* feature,
-loaded either by copying the file into the deCONZ `devices/` folder or via the DDF Editor
-in the deCONZ **desktop GUI** (VNC/X11), never in Phoscon.
+| File | Purpose |
+|---|---|
+| `awning_protection.json` | The DDF (a DDF is stored as `.json` — that is the correct extension). |
+| `awning_protection.ddb` | Pre-built offline DDF **bundle** (DDF + the generic items it references). |
+| `build_bundle_protection.py` | Rebuilds `awning_protection.ddb` offline from the JSON + `generic/`. |
+| `generic/` | Shared item/constant descriptors the DDF references. |
 
 ## Install the DDF
 
-1. Copy `awning_wind_sensor.json` into the deCONZ user-DDF `devices/` folder:
-   - **Windows:** `%LOCALAPPDATA%\dresden-elektronik\deCONZ\devices\`
-     (i.e. `C:\Users\<you>\AppData\Local\dresden-elektronik\deCONZ\devices\`)
-   - **Linux (native):** `~/.local/share/dresden-elektronik/deCONZ/devices/`
-   - **Home Assistant deCONZ add-on:**
-     `/mnt/data/supervisor/addons/data/core_deconz/.local/share/dresden-elektronik/deCONZ/devices/`
-     (reach it via the SSH/Samba add-on; the deCONZ add-on's own filesystem is otherwise
-     not exposed). Create the `devices/` folder if it does not exist.
-   - Bundled (read-only) DDFs live elsewhere under the install dir — put *custom* files
-     in the user `devices/` path above, not among the bundled ones.
-2. Load it — either way works:
-   - **Copy + hot-reload:** after copying, open the deCONZ desktop GUI → node context menu
-     or the DDF editor → **Hot Reload** (no restart), **or**
-   - **DDF Editor:** deCONZ desktop GUI → **DDF editor** → open the file → **Save** (it
-     writes into the `devices/` path and reloads).
-   - If neither is convenient, restarting deCONZ also picks up files in `devices/`.
-3. Join the sensor — see **Joining / pairing** below.
-4. **Confirm `modelid` / `manufacturername` match.** The firmware advertises
-   `manufacturername = "DIY"`, `modelid = "awning-wind-sensor"` (set in `zb.cpp`,
-   `ZB_MANUFACTURER` / `ZB_MODEL`) and the DDF already matches these. If you change
-   either string, change it in **both** places or the DDF stops binding. To double-check
-   what the device actually sent, open the joined node in the deCONZ GUI and read Basic
-   cluster (0x0000) attrs 0x0005 (model) / 0x0004 (manufacturer).
+Copy `awning_protection.json` into the deCONZ user-DDF `devices/` folder:
+
+- **Windows:** `%LOCALAPPDATA%\dresden-elektronik\deCONZ\devices\`
+- **Linux (native):** `~/.local/share/dresden-elektronik/deCONZ/devices/`
+- **Home Assistant deCONZ add-on:**
+  `/mnt/data/supervisor/addons/data/core_deconz/.local/share/dresden-elektronik/deCONZ/devices/`
+  (reach it via the SSH/Samba add-on). Create `devices/` if it doesn't exist.
+
+Then load it: deCONZ desktop GUI → **DDF Editor** → open the file → **Save/Hot Reload**,
+or just restart deCONZ (it picks up files in `devices/` on start). **You cannot upload a
+DDF through Phoscon** — Phoscon is only the pairing front-end; DDFs are a deCONZ core feature.
+
+**Confirm the identifiers match.** The firmware advertises `manufacturername = "DIY"`,
+`modelid = "awning-protection"` (set in `main/awning_config.h`,
+`ZB_MANUFACTURER_ZCL` / `ZB_MODEL_ZCL`) and the DDF matches these. If you change either
+string, change it in **both** places or the DDF stops matching. Read what the device
+actually sent from the joined node's Basic cluster (0x0000) attrs 0x0004 (manufacturer) /
+0x0005 (model).
 
 ## Joining / pairing
 
-The sensor has a **pairing button on IO14** (added after the initial build). A press
-wakes it and, if it is not on a network, forces a commissioning attempt.
+The sensor pairs on **cold boot** — no pairing button.
 
-**Phoscon has no generic "Other" sensor entry for a DIY analog device**, so do NOT
-try to join through *Sensors → Add new sensor* (that screen is a category filter for
-known commercial devices). Instead open the network directly:
+1. **Open the network first:** Phoscon → ☰ → **Settings → Gateway → Permit join** (~180 s),
+   or deCONZ GUI → **Edit → Permit Join**.
+2. **Cold-boot the sensor** (cell reinsert / **RST**) to trigger commissioning.
+3. Keep the ConBee II near the sensor for the first join.
+4. It joins as a raw node; the DDF binds it (identifiers already match).
 
-1. **Open the network for joining:**
-   - Phoscon → ☰ menu → **Settings → Gateway → Permit join** (opens the network ~180 s), or
-   - deCONZ GUI → **Edit → Permit Join**, or click the network padlock icon.
-2. **Press the IO14 pairing button** on the sensor. It wakes, sees it is not joined,
-   and runs commissioning. (Equivalently, a cold boot — cell reinsert or **RST** — also
-   commissions, per spec §4.1.)
-3. Keep the ConBee II near the sensor for the first join; relocate afterward.
-4. The device joins as a raw node and the DDF binds it (identifiers already match —
-   see step 4 of *Install the DDF*).
+> **Channel must match.** The firmware pins its scan to **channel 15** (`ZB_CHANNEL` in
+> `main/awning_config.h`). If you move the deCONZ network to a different channel, update
+> `ZB_CHANNEL` and re-flash, or the device won't find its parent. On each join the serial
+> log prints the joined channel/PAN.
 
-Do **not** use `erase_flash` to force a rejoin — it wipes the stored IEEE address and
-creates ghost devices in the coordinator (spec §8.1). The button / a power-cycle is
-all you need.
+Do **not** use `erase_flash` to force a rejoin — it wipes the IEEE address and creates ghost
+devices. A power-cycle is all that's needed.
 
-Because it is a sleepy end device, after joining you may need to **press the button
-once** (or tap the sensor) so it wakes and completes the report bindings; until then
-the values can read as empty.
+**After the first pairing, routine wakes rejoin silently — no Permit Join needed.** Because
+this firmware uses **Zigbee light sleep** (not deep sleep), the parent link stays alive the
+whole time via the ZED long-poll, so there is no aging-out and no rejoin race. Reports land
+against a live coordinator instantly.
 
 ## Verify
 
-- deCONZ GUI → node → each Analog Input cluster: **Read** attr 0x0055, confirm a plausible
-  value (near zero at rest, hundreds of mg when you tap the sensor).
-- Phoscon → the sensor should appear; the four values show under its details.
-- If values never populate, check the **binding table** on the node (GUI → node → *Bind
-  dropdown*) — a sleepy end device sometimes needs one wake (tap it) for bindings to take.
+- Phoscon: the sensor appears as a **Motion** card with a battery %. Shake it → it flips to
+  presence/occupied; after 30 s of quiet it clears.
+- deCONZ GUI → node → Occupancy Sensing (0x0406) → **Read** attr 0x0000 (occupancy) and
+  0x0012 (sensitivity). Write 0x0012 to retune (raw 1–255; see the firmware README table).
+- Binding table (GUI → node → *Bind*) should hold the Occupancy + Power Config entries after
+  a fresh join.
 
-## Reporting note for a sleepy end device
+### If it never instantiates / the DDF "failed to load"
 
-The firmware pushes reports itself while awake (it does not rely on the coordinator
-polling it in deep sleep). The `report` bindings above set the coordinator's expectations;
-the `read` + `refresh.interval` entries are the fallback poll when the device is awake.
-Because the device is asleep most of the time, treat the firmware's own heartbeat
-(spec §4.3, 30 min) as the real update cadence, and keep the HA watchdog window at 45 min
-(spec §11.3) exactly as before.
+- **DDF Editor says "failed to load":** deCONZ rejected the file before matching. The custom
+  `state/presence` item carries an inline descriptor (`"schema": "resourceitem1.schema.json"`,
+  `datatype`, `access`, `public`) so deCONZ registers the name; don't remove it. Run deCONZ
+  with `--dbg-ddf=2` to see the exact rejection.
+- **Node shows as generic, not "Awning protection sensor":** the fingerprint didn't match —
+  recheck `modelid` / `manufacturername` against what the device reports (above).
+- **Bindings empty:** the DDF sets `"supportsMgmtBind": false` so deCONZ pushes bindings
+  directly rather than reading the (unanswered) `Mgmt_Bind_Req` first. Keep Permit Join open
+  across the first join so the queued Bind + Configure-Reporting reach the device.

@@ -1,0 +1,6 @@
+{
+    "schema": "constants2.schema.json",
+    "$MF_DIY": "DIY",
+    "$TYPE_CONSUMPTION_SENSOR": "ZHAConsumption",
+    "$TYPE_PRESENCE_SENSOR": "ZHAPresence"
+}

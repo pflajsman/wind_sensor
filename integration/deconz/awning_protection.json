@@ -1,0 +1,75 @@
+{
+  "schema": "devcap1.schema.json",
+  "manufacturername": "DIY",
+  "modelid": "awning-protection",
+  "product": "Awning protection sensor",
+  "sleeper": true,
+  "status": "Gold",
+  "comment": "ESP32-H2 Zigbee sleepy end device. ONE endpoint (0x0a) carries everything: Basic (0x0000), Identify (0x0003), Power Configuration (0x0001, battery) and Occupancy Sensing (0x0406, the one 'awning protected' value). Single endpoint = single fingerprint, so deCONZ instantiates the ZHAPresence sensor cleanly on pair. manufacturername/modelid MUST match what the device reports on join (Phoscon -> device -> Basic cluster 0x0000, attrs 0x0004/0x0005). Kept as literals (not $-constants) so no generic constants file has to be deployed for the DDF to match.",
+
+  "subdevices": [
+    {
+      "type": "ZHAPresence",
+      "restapi": "/sensors",
+      "uuid": ["$address.ext", "0x0a", "0x0406"],
+      "fingerprint": {
+        "profile": "0x0104",
+        "device": "0x0107",
+        "endpoint": "0x0a",
+        "in": ["0x0000", "0x0001", "0x0406"]
+      },
+      "items": [
+        { "name": "attr/id" },
+        { "name": "attr/lastannounced" },
+        { "name": "attr/lastseen" },
+        { "name": "attr/manufacturername" },
+        { "name": "attr/modelid" },
+        { "name": "attr/name" },
+        { "name": "attr/swversion" },
+        { "name": "attr/type" },
+        { "name": "attr/uniqueid" },
+        {
+          "name": "state/presence",
+          "schema": "resourceitem1.schema.json",
+          "datatype": "Bool",
+          "access": "R",
+          "public": true,
+          "description": "Awning protection state (true = protected / occupied). Phoscon 'Presence' card.",
+          "parse": { "at": "0x0000", "cl": "0x0406", "ep": 10, "eval": "Item.val = (Attr.val & 1) != 0" },
+          "read": { "at": "0x0000", "cl": "0x0406", "ep": 10 },
+          "refresh.interval": 3600
+        },
+        {
+          "name": "config/battery",
+          "description": "Battery percentage via Power Configuration cluster. BatteryPercentageRemaining (0x0021) is half-percent, so /2.",
+          "parse": { "at": "0x0021", "cl": "0x0001", "ep": 10, "eval": "Item.val = Attr.val / 2" },
+          "read": { "at": "0x0021", "cl": "0x0001", "ep": 10 },
+          "refresh.interval": 3600
+        },
+        {
+          "name": "config/sensitivity",
+          "description": "Sensitivity = ADXL345 activity threshold, raw units 1-255 (Occupancy Sensing PIRUnoccupiedToOccupiedThreshold 0x0012); approx mg = value x 62.5. Lower = more sensitive. Writable at runtime; the device applies it to the accelerometer live and persists it in NVS. Sleepy ED: a write is queued and applied on the device's next wake.",
+          "parse": { "at": "0x0012", "cl": "0x0406", "ep": 10, "eval": "Item.val = Attr.val" },
+          "read":  { "at": "0x0012", "cl": "0x0406", "ep": 10 },
+          "write": { "at": "0x0012", "cl": "0x0406", "ep": 10, "dt": "0x20", "eval": "Attr.val = Item.val" },
+          "refresh.interval": 3600
+        }
+      ]
+    }
+  ],
+
+  "bindings": [
+    {
+      "bind": "unicast",
+      "src.ep": 10,
+      "cl": "0x0406",
+      "report": [ { "at": "0x0000", "dt": "0x18", "min": 1, "max": 3600, "change": "0x01" } ]
+    },
+    {
+      "bind": "unicast",
+      "src.ep": 10,
+      "cl": "0x0001",
+      "report": [ { "at": "0x0021", "dt": "0x20", "min": 3600, "max": 3600, "change": "0x00" } ]
+    }
+  ]
+}

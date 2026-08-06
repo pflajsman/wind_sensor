@@ -1,13 +1,22 @@
 # Claude Code local machine settings
 .claude/settings.local.json
 
-# Arduino / PlatformIO build artifacts
+# ESP-IDF build artifacts + auto-downloaded components
 build/
 *.elf
 *.hex
 *.bin
 *.o
 *.d
+
+# esp-zigbee-lib is auto-downloaded by `idf.py` from dependencies.lock — don't commit it.
+managed_components/
+
+# Local vendor SDK checkout (Espressif esp-zigbee-sdk) — not our code.
+idf/esp-zigbee-sdk/
+
+# Stale sdkconfig backups
+sdkconfig.old
 
 # OS files
 Thumbs.db

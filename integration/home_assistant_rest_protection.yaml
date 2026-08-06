@@ -1,0 +1,130 @@
+# Home Assistant REST integration for awning-protection — via the deCONZ REST API.
+#
+# For the NEW single-endpoint firmware (awning_protection): ONE endpoint (0x0a) exposes just
+# two things — occupancy/presence (the "awning protected" boolean, Occupancy Sensing 0x0406)
+# and battery (Power Configuration 0x0001). So this file is only two REST sensors, not the
+# five of the old wind-sensor build.
+#
+# WHY REST instead of the deCONZ HA integration: polling the deCONZ REST API directly is the
+# most reliable path for a DIY DDF device — it does not depend on the official integration
+# importing custom subdevices correctly.
+#
+# ────────────────────────────────────────────────────────────────────────────────────────
+# VALUES ALREADY BAKED IN
+# ────────────────────────────────────────────────────────────────────────────────────────
+#   deCONZ API key : 7538CF4326
+#   Device IEEE    : 74:4d:bd:ff:fe:6d:58:e1
+#   deCONZ host    : http://core-deconz:40850   (HA deCONZ add-on internal hostname)
+#
+# If HA reaches deCONZ at a different address (e.g. your host IP + mapped port such as
+# http://192.168.1.10:40850), find/replace http://core-deconz:40850 throughout this file.
+#
+# SECURITY NOTE: the API key is embedded below for convenience. Prefer moving it to
+# config/secrets.yaml (deconz_api_key: "7538CF4326") and replacing the URLs with
+# "http://core-deconz:40850/api/{{ ... }}" via !secret if you keep this file in git.
+#
+# SETUP:
+#   1. Put this file's `sensor:` block into configuration.yaml (or split it out and
+#      `sensor: !include integration/home_assistant_rest_protection.yaml`).
+#   2. Restart HA (or reload REST entities). Entities appear as:
+#        binary_sensor.awning_protection_occupancy   (from the template below)
+#        sensor.awning_protection_presence_raw        (raw REST poll, on/off text)
+#        sensor.awning_protection_battery             (%)
+#
+# QUICK SANITY CHECK (run on your HA box, not this dev machine — core-deconz only resolves
+# inside HA). Confirms REST can see the device + shows the exact uniqueids:
+#   curl -s http://core-deconz:40850/api/7538CF4326/sensors | grep -io 'uniqueid":"[^"]*'
+# You should see a line containing 74:4d:bd:ff:fe:6d:58:e1-0a-...
+# ==========================================================================================
+
+# ==========================================================================================
+# REST SENSORS — both filter the /sensors list by the device IEEE + endpoint 0x0a.
+# deCONZ uniqueid format is "<ieee>-<endpoint>-<cluster>", so we match on ieee + '-0a-'.
+# ==========================================================================================
+sensor:
+  # Presence / "awning protected" boolean, polled as on/off text. The binary_sensor template
+  # at the bottom converts this into a proper binary_sensor with the occupancy device_class.
+  - platform: rest
+    name: "Awning protection presence raw"
+    unique_id: awning_protection_presence_raw
+    resource: "http://core-deconz:40850/api/7538CF4326/sensors"
+    scan_interval: 60
+    value_template: >
+      {% set ns = namespace(v=none) %}
+      {% for k, s in value_json.items() %}
+        {% if s.uniqueid is defined and s.uniqueid.startswith('74:4d:bd:ff:fe:6d:58:e1')
+             and s.state is defined
+              and s.state.presence is defined %}
+          {% set ns.v = s.state.presence %}
+        {% endif %}
+      {% endfor %}
+      {{ 'on' if ns.v else 'off' }}
+
+  # Battery percentage. deCONZ may expose battery in EITHER place depending on the model:
+  #   - config.battery on the presence resource, OR
+  #   - state.battery on a separate ZHABattery resource.
+  # This reads whichever exists, across ALL of the device's sensor resources (match by IEEE
+  # only, no endpoint assumption). Sleepy device: stays 'none' until the first Power Config
+  # report lands after a wake.
+  - platform: rest
+    name: "Awning protection battery"
+    unique_id: awning_protection_battery
+    resource: "http://core-deconz:40850/api/7538CF4326/sensors"
+    scan_interval: 300
+    unit_of_measurement: "%"
+    device_class: battery
+    value_template: >
+      {% set ns = namespace(v=none) %}
+      {% for k, s in value_json.items() %}
+        {% if s.uniqueid is defined and s.uniqueid.startswith('74:4d:bd:ff:fe:6d:58:e1') %}
+          {% if s.config is defined and s.config.battery is defined and s.config.battery != none %}
+            {% set ns.v = s.config.battery %}
+          {% elif s.state is defined and s.state.battery is defined and s.state.battery != none %}
+            {% set ns.v = s.state.battery %}
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+      {% if ns.v is not none %}{{ ns.v }}{% endif %}
+
+# ==========================================================================================
+# BINARY SENSOR — turns the presence text sensor above into a real occupancy binary_sensor.
+# Put this under `binary_sensor:` in configuration.yaml (or an !include). This is the entity
+# to use in automations: binary_sensor.awning_protection_occupancy.
+# ==========================================================================================
+binary_sensor:
+  - platform: template
+    sensors:
+      awning_protection_occupancy:
+        friendly_name: "Awning protected"
+        unique_id: awning_protection_occupancy
+        device_class: occupancy
+        value_template: "{{ is_state('sensor.awning_protection_presence_raw', 'on') }}"
+        availability_template: >
+          {{ states('sensor.awning_protection_presence_raw') not in
+             ['unknown', 'unavailable', none] }}
+
+# ==========================================================================================
+# EXAMPLE AUTOMATION — close the awning when it reports "protected" (movement above the
+# firmware threshold) for a sustained period. Put this under `automation:` (or an !include).
+# Replace `cover.awning` with your actual awning cover entity. The `for:` debounce avoids
+# reacting to a single brief jolt.
+#
+# NOTE: this firmware reports only the boolean (occupancy), not the raw movement value, so the
+# close point is tuned in the FIRMWARE (OCCUPANCY_MG_THRESHOLD in awning_config.h), not with a
+# HA slider. If you want in-HA calibration, switch back to the analog wind-sensor build.
+# ==========================================================================================
+automation:
+  - alias: "Awning: close when protection triggers"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.awning_protection_occupancy
+        to: "on"
+        for:
+          seconds: 10
+    condition:
+      - condition: template
+        value_template: "{{ states('cover.awning') != 'closed' }}"
+    action:
+      - service: cover.close_cover
+        target:
+          entity_id: cover.awning
