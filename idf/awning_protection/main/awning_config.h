@@ -100,10 +100,36 @@
 /* --- Battery --------------------------------------------------------------------------- */
 #define VBAT_RATIO          1.769f /* LaskaKit ESP32-H2-DEVKit V2 silkscreen divider ratio (IO3) */
 
-/* --- Measurement window (drives adxl345_measure_window) --------------------------------- */
+/* --- Measurement window (drives adxl345_measure_window, heartbeat diagnostic only) ------- */
 #define SAMPLE_RATE_HZ   50
 #define WINDOW_MS        4000
 #define WINDOW_SAMPLES   ((SAMPLE_RATE_HZ * WINDOW_MS) / 1000) /* 200 */
+
+/* --- Motion classifier: open/close vs wind (see MOTION_CLASSIFIER_DESIGN.md) ------------- */
+/* On a motion trigger we sample a SHORT window and classify the MOTION CHARACTER: a motor
+ * open/close is smooth / one-directional / low-frequency; wind is chaotic / oscillating /
+ * high-frequency. Smooth => keep occupancy 0 (deliberate move); chaotic => latch 1 (wind).
+ * NOTE: the *_THRESH values below are PLACEHOLDERS — they must be tuned from real data (the
+ * firmware logs every metric each window; see the design doc §6). Until tuned, leave
+ * CLASSIFIER_ENABLE at 0 to keep the proven always-latch behaviour while you collect logs. */
+#define CLASSIFIER_ENABLE       0   /* 0 = always latch on motion (current behaviour + metric logs);
+                                       1 = use the smooth-vs-chaotic decision below */
+
+#define CLASS_WINDOW_MS       1500  /* classification window length (short, not the 4s diag one) */
+#define CLASS_WINDOW_SAMPLES  ((SAMPLE_RATE_HZ * CLASS_WINDOW_MS) / 1000) /* 75 */
+
+/* Duration bound: a motor open/close is ~36 s here, then stops dead. A "smooth" burst is
+ * treated as a deliberate move for at most this long; if motion is STILL present after it, a
+ * real move would have finished, so we reclassify as wind and latch 1 (a sustained disturbance
+ * is wind whatever its texture). 36 s travel + margin. */
+#define MOVE_MAX_S             45
+
+/* Decision thresholds (PLACEHOLDERS — tune per MOTION_CLASSIFIER_DESIGN.md §6). "Smooth" =
+ * few direction reversals AND low jerk AND (strongly one-directional OR one dominant axis). */
+#define CLASS_REVERSALS_MAX     6     /* max dominant-axis AC sign-changes to still be "smooth" */
+#define CLASS_JERK_MAX          40.0f /* max mean |Δaccel| per sample (mg) to still be "smooth" */
+#define CLASS_DIRECTIONALITY_MIN 0.55f /* min |net|/path on dominant axis (1=pure one-way, 0=oscillation) */
+#define CLASS_DOM_RATIO_MIN      0.60f /* min dominant-axis AC-energy fraction (1=single axis) */
 
 /* --- Sensitivity: ADXL345 ACTIVITY threshold (the ONE knob that gates occupancy) ------- */
 /* THRESH_ACT (0x24) raw units, 62.5 mg/LSB. When acceleration activity crosses this, the ADXL

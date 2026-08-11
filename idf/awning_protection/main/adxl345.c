@@ -124,6 +124,78 @@ void adxl345_rearm_activity(void)
     adxl345_clear_interrupt();
 }
 
+/* Classification window: capture X/Y/Z over CLASS_WINDOW_MS, then compute AC-coupled
+ * motion-character metrics on the dominant axis. Distinguishes smooth motor travel from
+ * chaotic wind. See MOTION_CLASSIFIER_DESIGN.md §3. */
+void adxl345_classify_window(class_metrics_t *out)
+{
+    const uint16_t N = CLASS_WINDOW_SAMPLES;
+    const uint32_t period_us = 1000000UL / SAMPLE_RATE_HZ;
+
+    static float bx[CLASS_WINDOW_SAMPLES], by[CLASS_WINDOW_SAMPLES], bz[CLASS_WINDOW_SAMPLES];
+    double sx = 0, sy = 0, sz = 0;
+    uint16_t n = 0;
+
+    /* Pass 1: sample the window, buffer per-axis (mg) and accumulate means. */
+    for (uint16_t i = 0; i < N; i++) {
+        int64_t t0 = esp_timer_get_time();
+        int16_t xr, yr, zr;
+        if (read_sample(&xr, &yr, &zr)) {
+            bx[n] = xr * ADXL_MG_PER_LSB;
+            by[n] = yr * ADXL_MG_PER_LSB;
+            bz[n] = zr * ADXL_MG_PER_LSB;
+            sx += bx[n]; sy += by[n]; sz += bz[n];
+            n++;
+        }
+        uint32_t elapsed = (uint32_t)(esp_timer_get_time() - t0);
+        if (elapsed < period_us) esp_rom_delay_us(period_us - elapsed);
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->samples = n;
+    if (n < 2) return;
+
+    /* Per-axis mean (the DC / gravity component to remove). */
+    float mx = (float)(sx / n), my = (float)(sy / n), mz = (float)(sz / n);
+
+    /* AC energy per axis → pick the dominant axis (most motion). */
+    double ex = 0, ey = 0, ez = 0;
+    for (uint16_t i = 0; i < n; i++) {
+        float ax = bx[i] - mx, ay = by[i] - my, az = bz[i] - mz;
+        ex += (double)ax * ax; ey += (double)ay * ay; ez += (double)az * az;
+    }
+    double etot = ex + ey + ez;
+
+    uint8_t dom = 0; double edom = ex; float *buf = bx; float mean = mx;
+    if (ey > edom) { dom = 1; edom = ey; buf = by; mean = my; }
+    if (ez > edom) { dom = 2; edom = ez; buf = bz; mean = mz; }
+    out->dom_axis  = dom;
+    out->dom_ratio = (etot > 0.0) ? (float)(edom / etot) : 0.0f;
+
+    /* Overall AC RMS (all axes) — motion energy. */
+    out->rms = sqrtf((float)(etot / n));
+
+    /* Dominant-axis metrics: reversals, jerk, directionality — on the AC signal. */
+    uint16_t reversals = 0;
+    double jerk_sum = 0, path = 0, net = 0;
+    float prev_ac = buf[0] - mean;
+    int prev_sign = (prev_ac > 0) - (prev_ac < 0);
+    for (uint16_t i = 1; i < n; i++) {
+        float ac = buf[i] - mean;
+        float d = ac - prev_ac;         /* sample-to-sample change (jerk contribution) */
+        jerk_sum += fabsf(d);
+        path     += fabsf(d);           /* total path travelled by the AC signal */
+        net      += d;                  /* net displacement of the AC signal */
+        int sign = (ac > 0) - (ac < 0);
+        if (sign != 0 && prev_sign != 0 && sign != prev_sign) reversals++;
+        if (sign != 0) prev_sign = sign;
+        prev_ac = ac;
+    }
+    out->reversals      = reversals;
+    out->jerk           = (float)(jerk_sum / (n - 1));
+    out->directionality = (path > 0.0) ? (float)(fabs(net) / path) : 0.0f;
+}
+
 void adxl345_measure_window(accel_metrics_t *out)
 {
     const uint16_t N = WINDOW_SAMPLES;

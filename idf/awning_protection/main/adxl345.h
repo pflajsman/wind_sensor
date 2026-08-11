@@ -48,6 +48,19 @@ typedef struct {
     float tilt_roll;
 } accel_metrics_t;
 
+/* Motion-character metrics from a classification window, used to tell a smooth motor
+ * open/close from chaotic wind (see MOTION_CLASSIFIER_DESIGN.md). All computed on the
+ * AC component (per-axis mean removed) of the dominant axis unless noted. */
+typedef struct {
+    float    rms;            /* AC RMS over the window (mg) — overall motion energy */
+    uint16_t reversals;      /* dominant-axis AC sign-changes (few=smooth, many=chaotic) */
+    float    jerk;           /* mean |Δaccel| per sample on dominant axis (mg) */
+    float    dom_ratio;      /* dominant-axis AC energy / total AC energy (0..1) */
+    float    directionality; /* |net|/path on dominant axis (1=one-way, 0=oscillation) */
+    uint8_t  dom_axis;       /* 0=X 1=Y 2=Z — which axis had the most AC energy */
+    uint16_t samples;        /* samples actually captured */
+} class_metrics_t;
+
 /* Init the I2C bus, scan for 0x53/0x1D, verify DEVID. */
 esp_err_t adxl345_init(void);
 
@@ -69,6 +82,10 @@ uint8_t adxl345_clear_interrupt(void);
 
 /* True if the ACTIVITY interrupt fired since the last INT_SOURCE read (also clears/re-arms). */
 bool adxl345_activity_fired(void);
+
+/* Sample a CLASS_WINDOW_SAMPLES window at 50 Hz and compute motion-character metrics for the
+ * open/close-vs-wind classifier. Caller sets ODR to 50 Hz first (adxl345_set_odr50). */
+void adxl345_classify_window(class_metrics_t *out);
 
 /* Capture one WINDOW_SAMPLES window and compute metrics. */
 void adxl345_measure_window(accel_metrics_t *out);

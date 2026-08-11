@@ -225,6 +225,40 @@ static void report_battery_now(void)
     report_battery(b.soc);
 }
 
+/* Motion classifier: on a motion event, sample a short window and decide whether the motion
+ * looks like a smooth motor open/close (return false — NOT wind) or chaotic wind (return true).
+ * ALWAYS logs the raw metrics so they can be captured for tuning (see MOTION_CLASSIFIER_DESIGN.md
+ * §6), regardless of whether CLASSIFIER_ENABLE gates the decision. Returns the "is wind" verdict:
+ *   CLASSIFIER_ENABLE == 0  -> always true  (current always-latch behaviour; metrics still logged)
+ *   CLASSIFIER_ENABLE == 1  -> false if the window looks smooth/one-directional, else true. */
+static bool motion_is_wind(void)
+{
+    if (!s_accel_ok) return true; /* no accel data -> can't classify; fail safe to "wind" (report) */
+
+    class_metrics_t m;
+    adxl345_set_odr50();
+    adxl345_classify_window(&m);
+    adxl345_set_odr25();
+
+    bool smooth = (m.reversals <= CLASS_REVERSALS_MAX) &&
+                  (m.jerk      <= CLASS_JERK_MAX) &&
+                  (m.directionality >= CLASS_DIRECTIONALITY_MIN ||
+                   m.dom_ratio      >= CLASS_DOM_RATIO_MIN);
+
+    /* Tuning log — capture these across real opens (remote + HA) and real wind to set thresholds. */
+    ESP_LOGI(TAG, "classify: n=%u rms=%.1f rev=%u jerk=%.1f dir=%.2f dom=%.2f(ax%u) -> %s%s",
+             m.samples, m.rms, m.reversals, m.jerk, m.directionality, m.dom_ratio, m.dom_axis,
+             smooth ? "SMOOTH(open)" : "CHAOTIC(wind)",
+             CLASSIFIER_ENABLE ? "" : " [classifier OFF: latching anyway]");
+
+#if CLASSIFIER_ENABLE
+    return !smooth;   /* smooth -> not wind (deliberate move) */
+#else
+    (void)smooth;
+    return true;      /* classifier disabled -> preserve always-latch behaviour */
+#endif
+}
+
 /* ------------------------------------------------------------------------------------- */
 /* Report task: the single driver of reporting. Blocks on a task notification with a       */
 /* HB_INTERVAL_S timeout, so it reports once per heartbeat AND immediately whenever the     */
@@ -240,6 +274,12 @@ static void report_task(void *pv)
     bool occupied = false;                 /* latched occupancy state we've reported */
     int64_t last_motion_us = 0;            /* esp_timer time of the most recent activity */
     int64_t last_hb_us = esp_timer_get_time();
+
+    /* Move-grace state (classifier): while a burst keeps classifying as a smooth open/close we
+     * hold occupancy 0. move_start_us marks when the current smooth burst began; if smooth
+     * motion is still present after MOVE_MAX_S, a real open/close would be done -> it's wind. */
+    bool move_active = false;
+    int64_t move_start_us = 0;
 
     for (;;) {
         /* Short poll instead of one long block. This is what makes motion reliable under light
@@ -268,14 +308,35 @@ static void report_task(void *pv)
         if (motion) last_motion_us = now;
 
         if (motion && !occupied) {
-            occupied = true;
-            ESP_LOGI(TAG, "motion — occupancy 1");
-            report_occupancy(true);
-        } else if (occupied && !motion &&
-                   (now - last_motion_us) >= (int64_t)OCCUPANCY_CLEAR_S * 1000000) {
-            occupied = false;
-            ESP_LOGI(TAG, "quiet %ds — occupancy 0", OCCUPANCY_CLEAR_S);
-            report_occupancy(false);
+            /* Classify: smooth motor open/close, or chaotic wind? (Metrics always logged.) */
+            bool wind = motion_is_wind();
+
+            if (!wind) {
+                /* Looks like a deliberate open/close. Hold occupancy 0 — UNLESS this smooth
+                 * burst has already run longer than a full travel (MOVE_MAX_S), in which case a
+                 * real move would be finished, so a still-present disturbance is wind after all. */
+                if (!move_active) { move_active = true; move_start_us = now; }
+                if ((now - move_start_us) >= (int64_t)MOVE_MAX_S * 1000000) {
+                    ESP_LOGW(TAG, "smooth motion > %ds — treating as wind, occupancy 1", MOVE_MAX_S);
+                    occupied = true;
+                    report_occupancy(true);
+                } else {
+                    ESP_LOGI(TAG, "smooth motion — deliberate open/close, occupancy stays 0");
+                }
+            } else {
+                occupied = true;
+                move_active = false;
+                ESP_LOGI(TAG, "motion — occupancy 1");
+                report_occupancy(true);
+            }
+        } else if (!motion) {
+            move_active = false; /* burst ended (clean stop) — reset the move-grace window */
+            if (occupied &&
+                (now - last_motion_us) >= (int64_t)OCCUPANCY_CLEAR_S * 1000000) {
+                occupied = false;
+                ESP_LOGI(TAG, "quiet %ds — occupancy 0", OCCUPANCY_CLEAR_S);
+                report_occupancy(false);
+            }
         }
 
         /* Heartbeat: re-assert occupancy + refresh battery on the slow cadence. */

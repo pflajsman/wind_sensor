@@ -3,8 +3,11 @@
 Goal: on a **front-bar mount**, tell a **deliberate motor open/close** apart from **wind
 disturbance**, so the everyday open/close does not falsely latch occupancy = 1.
 
-Status: **design only — no code written.** Review this, then measure the metrics on the real
-awning (see §6) before we implement. Nothing in the current firmware changes until you say so.
+Status: **IMPLEMENTED, but the decision is DISABLED by default** (`CLASSIFIER_ENABLE 0` in
+`awning_config.h`). In that state the firmware behaves exactly as before (always latch occupancy
+on motion) **but logs all classifier metrics on every motion window** — so you can capture real
+open-vs-wind data (§6), set the thresholds, then flip `CLASSIFIER_ENABLE` to `1` to turn the
+smooth-vs-chaotic decision on. This is the safe rollout the design intended.
 
 Related: [`TECHNICAL.md`](TECHNICAL.md) (current motion-latch model), [`README.md`](README.md)
 (sensitivity), the field notes on why the Faraday-cage and tilt approaches were rejected.
