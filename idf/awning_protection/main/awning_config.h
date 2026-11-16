@@ -15,12 +15,24 @@
 #define ZB_MANUFACTURER_STR "DIY"
 #define ZB_MODEL_STR        "awning-protection"
 
-/* --- Zigbee network channel (deCONZ) --------------------------------------------------- */
-/* Pin the ED to the coordinator's single channel so a post-sleep rejoin scans one channel
- * (fast, reliably beats the join timeout). MUST match your deCONZ network channel
- * (Phoscon -> Settings -> Gateway -> Advanced). */
-#define ZB_CHANNEL       15
-#define ZB_CHANNEL_MASK  (1UL << ZB_CHANNEL)
+/* --- Zigbee channels ------------------------------------------------------------------ */
+/* Pairing scans ALL Zigbee channels (11-26), so the sensor joins any coordinator without a
+ * reflash. After the first join the stack stores the network's channel and every rejoin goes
+ * straight to it, so the wider mask only costs time during pairing. */
+#define ZB_CHANNEL_MASK  0x07FFF800UL   /* channels 11..26 */
+
+/* --- Link loss -------------------------------------------------------------------------- */
+/* ed_timeout in ESP_ZIGBEE_ZED_CONFIG() below (4 min) is, on an end device, how long keep-alive polls may keep failing
+ * before the stack declares its parent lost (it was 64 min: the sensor sat deaf for an hour).
+ * When the parent is lost the firmware reboots after LINK_LOSS_REBOOT_DELAY_S; the boot path
+ * then rejoins (with backoff), finding a new parent if the old router is gone. */
+#define LINK_LOSS_REBOOT_DELAY_S   2
+
+/* --- Pairing window -------------------------------------------------------------------- */
+/* An unpaired sensor searches for an open network (deCONZ "Permit join") for this long, then
+ * stops to save the battery. Reopen it with a short press of the user button or with RST. */
+#define PAIR_WINDOW_S        180   /* how long the sensor searches for a network */
+#define PAIR_RETRY_S           3   /* pause between steering attempts inside the window */
 
 /* --- Zigbee stack config (modeled on the vendor deep_sleep_end_device .h) --------------- */
 #define ESP_ZIGBEE_STORAGE_PARTITION_NAME "zb_storage"
@@ -30,7 +42,7 @@
         .device_type = EZB_NWK_DEVICE_TYPE_END_DEVICE, \
         .install_code_policy = false,                  \
         .zed_config = {                                \
-            .ed_timeout = EZB_NWK_ED_TIMEOUT_64MIN,    \
+            .ed_timeout = EZB_NWK_ED_TIMEOUT_4MIN,     \
             .keep_alive = 4000,                        \
         },                                             \
     }
@@ -73,6 +85,28 @@
 #define PIN_SCL   GPIO_NUM_10   /* ADXL345 SCL */
 #define PIN_INT1  GPIO_NUM_13   /* ADXL345 INT1, active-high; EXT1 light-sleep wake (RTC IO) */
 #define PIN_VBAT  3             /* ADC battery divider (LaskaKit V2 IO3 = ADC1_CH2) */
+#define PIN_LED   GPIO_NUM_22   /* SK6812 RGB status LED (LaskaKit V2: moved from IO9 to IO22) */
+#define PIN_BUTTON GPIO_NUM_25  /* on-board user button (BOM: "user button, IO25") */
+
+/* --- User button + status LED (ui.c) ---------------------------------------------------- */
+/* IO25 is not an LP/RTC GPIO, so it cannot wake light sleep; it is sampled on every report
+ * tick (MOTION_POLL_S). Hold ~1 s for a short press; hold UI_LONG_PRESS_S, then release, for a
+ * factory reset. Holds longer than UI_STUCK_PRESS_S are ignored (stuck plunger protection). */
+#define BUTTON_ACTIVE_LEVEL    0     /* button pulls IO25 to GND (internal pull-up enabled).
+                                        VERIFY on the board schematic; set 1 if it pulls high. */
+#define BUTTON_DEBOUNCE_MS    30
+#define BUTTON_SAMPLE_MS      20
+#define UI_LONG_PRESS_S        5
+#define UI_STUCK_PRESS_S      20
+#define LED_BRIGHTNESS        24     /* 0-255 per colour channel; low to save battery */
+#define LED_JOINED_MS       2000
+#define LED_FAILED_MS       2000
+#define LED_ACK_MS           300
+
+/* Factory reset fallback: after a button reset the device first tries a proper Zigbee leave
+ * (tells the coordinator it is gone). If the coordinator is unreachable and no leave
+ * confirmation arrives within this time, it wipes the network data locally and reboots. */
+#define FACTORY_RESET_FALLBACK_S  10
 
 /* Light-sleep wake on the accel INT1 (active-high). Movement asserts INT1, which brings the
  * CPU out of light sleep via EXT1 (the always-on RTC domain — required because we power down

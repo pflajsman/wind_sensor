@@ -12,6 +12,18 @@ so the parent link never drops.
 - **Light sleep, not deep sleep:** the ZED long-poll keeps the coordinator link alive, so
   reports land instantly with no rejoin. Idle current ~1–2 mA (weeks on an 18650).
 
+## Pairing, reset and status LED
+
+- **Unpaired sensor:** power it up (or press RST) with Permit Join open on the coordinator. It
+  searches all Zigbee channels for 3 minutes (LED blinks blue), green on success, red if the
+  window ends. Short press the user button to search again.
+- **Factory reset / move to another coordinator:** hold the user button (IO25) for 5 s until
+  the LED blinks red fast, then release.
+- Full button and LED reference: [`../../integration/deconz/README.md`](../../integration/deconz/README.md#joining--pairing).
+
+The enclosure has a PAIR plunger for the user button, a recessed RST plunger and a window for
+the status LED: see `hardware/enclosure/ENCLOSURE.md`.
+
 ## Build
 
 ESP-IDF **6.0.2**. The `export.ps1` env script fails on usernames with non-ASCII
@@ -93,10 +105,11 @@ sensitivity loaded from NVS: THRESH_ACT raw=8 (~500 mg)
 
 | File | Purpose |
 |---|---|
-| `main/awning_protection.c` | App: light-sleep + join/rejoin, motion-latch report task, ZCL write handler |
+| `main/awning_protection.c` | App: light-sleep, pairing window / reset / rejoin, motion-latch report task, ZCL write + Identify handler |
 | `main/awning_config.h` | Pins, timings, sensitivity defaults, NVS keys — all tunables |
 | `main/adxl345.c` / `.h` | ADXL345 driver (activity interrupt, live threshold, movement window) |
 | `main/battery.c` / `.h` | Battery divider read + SoC |
+| `main/ui.c` / `.h` | User button (pairing / reset) + SK6812 status LED |
 | `sdkconfig.defaults` | Light-sleep config (PM, tickless idle, radio power-down) |
 
 See [`TECHNICAL.md`](TECHNICAL.md) for the architecture (light sleep, motion latch, wake

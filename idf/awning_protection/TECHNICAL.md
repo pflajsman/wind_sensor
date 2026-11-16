@@ -19,6 +19,8 @@ Pin map (`main/awning_config.h`):
 | I²C SCL | 10 | ADXL345 |
 | ADXL INT1 | 13 | active-high; light-sleep **EXT1** wake (GPIO13 is RTC-capable, RTCIO ch6) |
 | VBAT ADC | 3 | LaskaKit V2 IO3 divider, ratio 1.769 |
+| Status LED | 22 | SK6812 RGB (V2 moved it from IO9 to IO22) |
+| User button | 25 | pairing / factory reset; active-low assumed (`BUTTON_ACTIVE_LEVEL`) |
 
 ---
 
@@ -126,25 +128,61 @@ Two bugs made motion "not react" during development, both fixed by the poll-base
 
 ### ZED config
 
-`ed_timeout = 64 min`, `keep_alive = 4000 ms` (`ESP_ZIGBEE_ZED_CONFIG()` in
-`awning_config.h`). `rx_on_when_idle = false`. Channel is pinned (`ZB_CHANNEL = 15`,
-`ZB_CHANNEL_MASK`) so a scan touches one channel; match it to your deCONZ network.
+`ed_timeout = 4 min`, `keep_alive = 4000 ms` (`ESP_ZIGBEE_ZED_CONFIG()` in
+`awning_config.h`). `rx_on_when_idle = false`. Pairing scans **all channels 11 to 26**
+(`ZB_CHANNEL_MASK = 0x07FFF800`); after the first join the stack stores the channel, so
+rejoins go straight to it.
 
 ---
 
-## 6. Join / rejoin state machine
+## 6. Join / pairing / reset state machine
 
-`app_signal_handler` (mirrors the vendor example):
+`app_signal_handler`:
 
-- `SKIP_STARTUP` → `bdb_start_top_level_commissioning(INITIALIZATION)`.
+- `SKIP_STARTUP` → set `s_stack_ready`, `bdb_start_top_level_commissioning(INITIALIZATION)`.
 - `DEVICE_FIRST_START` / `DEVICE_REBOOT`:
-  - factory-new → `NETWORK_STEERING`;
-  - already-joined → set `s_joined = true`, fire a baseline report;
-  - init failed but not factory-new → retry `INITIALIZATION` with backoff (cold-power-on
-    rejoin path — rare under light sleep since the link rarely drops);
-  - factory-new + failed → keep `STEERING` until Permit Join opens.
-- `STEERING` success → set `s_joined = true`, baseline report; failure → retry with backoff.
-- `EZB_ZDO_SIGNAL_LEAVE` → clear `s_joined` (stop reporting until rejoin).
+  - factory-new → **open the pairing window** (`pairing_open`): `NETWORK_STEERING` now, LED
+    blue blink, deadline `PAIR_WINDOW_S` (180 s);
+  - already-joined → `s_joined = true`, LED green, baseline report;
+  - init failed but not factory-new → retry `INITIALIZATION` with backoff 3 → 60 s (coordinator
+    down; a short button press retries immediately);
+  - factory-new + failed → pairing window (steering scheduled, not inline).
+- `STEERING` success → close window, `s_joined = true`, LED green, baseline report.
+  Failure → retry every `PAIR_RETRY_S` (3 s) **until the deadline**, then LED red and stop.
+  An unpaired sensor no longer scans forever.
+- `EZB_ZDO_SIGNAL_LEAVE`:
+  - leave **with** rejoin → clear `s_joined`, the stack rejoins on its own;
+  - leave **without** rejoin (our own button reset finished, or deCONZ deleted us) →
+    `esp_zigbee_factory_reset()` (wipes Zigbee data, reboots) → boots factory-new → pairing window.
+
+### User button (IO25) and LED (IO22), `main/ui.c`
+
+- IO25 is not an LP GPIO, so it **cannot wake light sleep**. The report task calls
+  `ui_tick()` on every 1 s wakeup; if the button is down, the button task takes a
+  `ESP_PM_NO_LIGHT_SLEEP` lock and times the press at 20 ms resolution.
+- Short press → `short_press_stack` (posted with `esp_zigbee_task_queue_post`): joined =
+  ACK + report; unpaired = open/extend window; paired but offline = rejoin now.
+- Hold ≥ 5 s, release → erase app NVS (`awning` namespace), then if joined
+  `ezb_bdb_reset_via_local_action()` (sends leave; its LEAVE signal finishes the reset), with
+  a 10 s fallback to `esp_zigbee_factory_reset()` if no leave confirmation arrives. Not joined
+  → `esp_zigbee_factory_reset()` directly. Holds > 20 s are ignored.
+- LED: SK6812 via `espressif/led_strip` (RMT). The LED task holds a PM lock only while a
+  pattern is showing; off = normal light sleep.
+- Identify: `EZB_ZCL_CORE_IDENTIFY_EFFECT_CB_ID` and writes to IdentifyTime (0x0003/0x0000)
+  blink the LED white.
+
+### Link loss and hang recovery
+
+- On an end device `ed_timeout` is how long keep-alive polls may fail before the stack declares
+  the parent lost. It was 64 min; now 4 min.
+- `EZB_NWK_SIGNAL_NETWORK_STATUS` with `PARENT_LINK_FAILURE` (or `NO_ACTIVE_LINKS_LEFT`) →
+  `link_lost()` → reboot after 2 s. The boot path rejoins with the stored keys and backs off
+  if the network is still down. Before this, nothing handled parent loss: the sensor stayed
+  unavailable until RST.
+- Task watchdog: the report task feeds it every 1 s; `CONFIG_ESP_TASK_WDT_PANIC=y`,
+  timeout 30 s, so a hung task reboots the chip.
+- Boot logs `reset reason` (`esp_reset_reason()`): tells a firmware fault (panic / watchdog)
+  from a link-loss reboot (software) or a power-up / RST.
 
 `s_joined` (a `volatile bool`, **owned by the signal handler**, which runs in the stack
 context) is the report task's gate — see the next section.
@@ -203,4 +241,5 @@ The fix and the rule:
 | Boot loop, `Load access fault` in `__assert_func` | Stack call from report task without lock / before init | Gate on `s_joined`; lock report calls (§7) |
 | Light-sleep change had no effect | Stale `sdkconfig` not re-seeded | `del sdkconfig; idf.py reconfigure` (§9) |
 | Sensitivity write does nothing | Writing the old mg semantics / wrong attr | It's raw `THRESH_ACT` on attr 0x0012 (§5) |
+| Sensor unavailable until RST pressed | Parent lost (router unplugged, coordinator restart); nothing triggered a rejoin, and `ed_timeout` was 64 min | Link-loss reboot + 4 min `ed_timeout` + task watchdog (§6) |
 | Device aged out, slow rejoin every wake | Deep sleep (the thing we left) | Light sleep keeps the poll alive (§2) |
