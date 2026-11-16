@@ -39,14 +39,32 @@ static esp_pm_lock_handle_t s_led_pm_lock;
 static esp_pm_lock_handle_t s_btn_pm_lock;
 #endif
 
+/* The SK6812 is powered from VSENSOR, which only exists while IO12 enables the LDO. Power it
+ * up for the first lit frame and cut it when the LED goes dark (see PIN_VSENSOR_EN). */
+static bool s_led_powered;
+
+static void led_power(bool on)
+{
+    if (on == s_led_powered) return;
+    if (on) {
+        gpio_set_level(PIN_VSENSOR_EN, 1);
+        vTaskDelay(pdMS_TO_TICKS(2));      /* LDO soft start + SK6812 power-on reset */
+    } else {
+        gpio_set_level(PIN_VSENSOR_EN, 0);
+    }
+    s_led_powered = on;
+}
+
 static void led_rgb(uint8_t r, uint8_t g, uint8_t b)
 {
     if (!s_strip) return;
     if (r | g | b) {
+        led_power(true);
         led_strip_set_pixel(s_strip, 0, r, g, b);
         led_strip_refresh(s_strip);
     } else {
-        led_strip_clear(s_strip);
+        if (s_led_powered) led_strip_clear(s_strip);
+        led_power(false);
     }
 }
 
@@ -122,6 +140,18 @@ void ui_led(ui_led_mode_t mode, uint32_t duration_ms)
 
 static esp_err_t led_init(void)
 {
+    gpio_config_t en = {
+        .pin_bit_mask = (1ULL << PIN_VSENSOR_EN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,   /* board has a 10k pull-down on the LDO EN */
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t err = gpio_config(&en);
+    if (err != ESP_OK) return err;
+    gpio_set_level(PIN_VSENSOR_EN, 0);
+    s_led_powered = false;
+
     led_strip_config_t strip_cfg = {
         .strip_gpio_num = PIN_LED,
         .max_leds = 1,
@@ -134,13 +164,12 @@ static esp_err_t led_init(void)
         .resolution_hz = 10 * 1000 * 1000,
         .flags = { .with_dma = false },
     };
-    esp_err_t err = led_strip_new_rmt_device(&strip_cfg, &rmt_cfg, &s_strip);
+    err = led_strip_new_rmt_device(&strip_cfg, &rmt_cfg, &s_strip);
     if (err != ESP_OK) {
         s_strip = NULL;
         return err;
     }
-    led_strip_clear(s_strip);
-    return ESP_OK;
+    return ESP_OK; /* LED is unpowered, so it is dark; no clear needed */
 }
 
 /* ------------------------------------------------------------------------------------- */

@@ -19,7 +19,8 @@ Pin map (`main/awning_config.h`):
 | I²C SCL | 10 | ADXL345 |
 | ADXL INT1 | 13 | active-high; light-sleep **EXT1** wake (GPIO13 is RTC-capable, RTCIO ch6) |
 | VBAT ADC | 3 | LaskaKit V2 IO3 divider, ratio 1.769 |
-| Status LED | 22 | SK6812 RGB (V2 moved it from IO9 to IO22) |
+| Status LED | 22 | SK6812 RGB (V2 moved it from IO9 to IO22); powered from VSENSOR |
+| VSENSOR enable | 12 | RT9080 LDO IC1 EN (10k pull-down); on only while the LED is lit |
 | User button | 25 | pairing / factory reset; active-low assumed (`BUTTON_ACTIVE_LEVEL`) |
 
 ---
@@ -167,7 +168,8 @@ rejoins go straight to it.
   a 10 s fallback to `esp_zigbee_factory_reset()` if no leave confirmation arrives. Not joined
   → `esp_zigbee_factory_reset()` directly. Holds > 20 s are ignored.
 - LED: SK6812 via `espressif/led_strip` (RMT). The LED task holds a PM lock only while a
-  pattern is showing; off = normal light sleep.
+  pattern is showing; off = normal light sleep. The SK6812 VDD is VSENSOR, so `ui.c` drives
+  IO12 high for each lit frame and low when dark (an idle SK6812 draws about 1 mA).
 - Identify: `EZB_ZCL_CORE_IDENTIFY_EFFECT_CB_ID` and writes to IdentifyTime (0x0003/0x0000)
   blink the LED white.
 

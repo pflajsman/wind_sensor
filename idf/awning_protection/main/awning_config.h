@@ -87,6 +87,11 @@
 #define PIN_VBAT  3             /* ADC battery divider (LaskaKit V2 IO3 = ADC1_CH2) */
 #define PIN_LED   GPIO_NUM_22   /* SK6812 RGB status LED (LaskaKit V2: moved from IO9 to IO22) */
 #define PIN_BUTTON GPIO_NUM_25  /* on-board user button (BOM: "user button, IO25") */
+/* IO12 (IO12_USUP) enables the RT9080 LDO IC1 that makes VSENSOR (10k pull-down on EN). On the
+ * V2 schematic VSENSOR feeds the SK6812 VDD, the uSup J3/J5 VCC pins and the I2C pull-ups
+ * R13/R14. ui.c switches it on only while the LED shows something: an idle SK6812 draws
+ * about 1 mA even when dark, which would cost far more than the rest of the sleep budget. */
+#define PIN_VSENSOR_EN GPIO_NUM_12
 
 /* --- User button + status LED (ui.c) ---------------------------------------------------- */
 /* IO25 is not an LP/RTC GPIO, so it cannot wake light sleep; it is sampled on every report
