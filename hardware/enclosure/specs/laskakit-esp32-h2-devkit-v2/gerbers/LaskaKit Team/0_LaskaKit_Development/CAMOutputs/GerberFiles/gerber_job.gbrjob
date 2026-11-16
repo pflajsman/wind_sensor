@@ -1,0 +1,24 @@
+{
+    "Header": {
+        "Comment": "All values are metric (mm)",
+        "CreationDate": "2026-01-29T12:31:10Z",
+        "GenerationSoftware": {
+            "Application": "Fusion Electronics",
+            "Vendor": "Autodesk",
+            "Version": "9.7.0"
+        },
+        "Part": "Single"
+    },
+    "Overall": {
+        "BoardThickness": 1.59,
+        "LayerNumber": 4,
+        "Name": {
+            "ProjectId": "ESP32-H2-DEVKit_v2 v9"
+        },
+        "Owner": "Martin Frajdl <martin@laskakit.cz>",
+        "Size": {
+            "X": 60.325,
+            "Y": 25.4
+        }
+    }
+}
