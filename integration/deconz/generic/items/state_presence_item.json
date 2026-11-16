@@ -4,6 +4,10 @@
   "datatype": "Bool",
   "access": "R",
   "public": true,
-  "description": "True when awning movement exceeds the firmware threshold (motion detected).",
+  "description": "True when presence is detected.",
+  "parse": {
+    "fn": "ias:zonestatus",
+    "mask": "alarm1,alarm2"
+  },
   "default": false
 }

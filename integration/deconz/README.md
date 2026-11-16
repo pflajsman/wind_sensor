@@ -132,10 +132,14 @@ against a live coordinator instantly.
 
 ### If it never instantiates / the DDF "failed to load"
 
-- **DDF Editor says "failed to load":** deCONZ rejected the file before matching. The custom
-  `state/presence` item carries an inline descriptor (`"schema": "resourceitem1.schema.json"`,
-  `datatype`, `access`, `public`) so deCONZ registers the name; don't remove it. Run deCONZ
+- **DDF Editor says "failed to load":** deCONZ rejected the file before matching. Run deCONZ
   with `--dbg-ddf=2` to see the exact rejection.
+- **Sensor found, but the Sensors list (or Help, API information) is empty or broken:** the
+  DDF follows the official deCONZ presence-sensor DDFs (for example
+  `sonoff/snzb-03p_motion_sensor.json` in deconz-rest-plugin). All of them have
+  `config/on`, `config/reachable` and `state/lastupdated`; older versions of our DDF lacked
+  them. The `generic/items/` files are unmodified copies from deconz-rest-plugin, so the
+  bundle does not change the shared item definitions other devices use.
 - **Node shows as generic, not "Awning protection sensor":** the fingerprint didn't match —
   recheck `modelid` / `manufacturername` against what the device reports (above).
 - **Bindings empty:** the DDF sets `"supportsMgmtBind": false` so deCONZ pushes bindings

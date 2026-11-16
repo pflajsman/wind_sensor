@@ -44,7 +44,10 @@ GENERIC_FILES = [
     "generic/items/attr_type_item.json",
     "generic/items/attr_uniqueid_item.json",
     "generic/items/config_battery_item.json",
+    "generic/items/config_on_item.json",
+    "generic/items/config_reachable_item.json",
     "generic/items/config_sensitivity_item.json",
+    "generic/items/state_lastupdated_item.json",
     "generic/items/state_presence_item.json",
 ]
 
