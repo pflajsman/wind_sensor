@@ -1,0 +1,110 @@
+# Home Assistant PACKAGE: offline detection for the awning sensor, for setups that use the
+# official deCONZ INTEGRATION (Settings > Devices & services > deCONZ).
+#
+# Why this is needed: a Zigbee device that loses power (battery pulled or flat) cannot say so.
+# The deCONZ integration keeps showing the last values until deCONZ itself flags the sensor as
+# not reachable, which for a battery sensor can take a long time. This package reads only one
+# thing straight from the deCONZ API, the sensor's "lastseen" time, and builds on it:
+#
+#     sensor.awning_sensor_last_seen        when deCONZ last received anything from the sensor
+#     binary_sensor.awning_sensor_online    connectivity: off = silent for more than 200 s
+#     binary_sensor.awning_protected_checked
+#         = your deCONZ presence entity, but UNAVAILABLE while the sensor is offline.
+#           Use this one in automations instead of the raw deCONZ entity.
+#
+# The firmware sends a keep-alive report every 60 s (ALIVE_INTERVAL_S), so expect about 3 to 4
+# minutes from pulling the battery to "offline".
+#
+# Do NOT install this together with ha_package_awning_protection.yaml (the REST-only variant):
+# that one already contains the same offline logic.
+#
+# ──────────────────────────────────────────────────────────────────────────────────────────
+# SETUP
+# ──────────────────────────────────────────────────────────────────────────────────────────
+# 1. configuration.yaml must contain:
+#        homeassistant:
+#          packages: !include_dir_named packages
+# 2. Save this file as /config/packages/awning_offline.yaml
+# 3. Find/replace  binary_sensor.REPLACE_WITH_DECONZ_PRESENCE  with the entity id of the
+#    sensor's presence entity from the deCONZ integration (Settings > Devices > the awning
+#    sensor > the occupancy / presence entity).
+# 4. Check the deCONZ API key, device IEEE and host below (same values as the deCONZ add-on).
+# 5. Developer Tools > YAML > Check configuration > Restart.
+#
+#     deCONZ API key : 7538CF4326
+#     Device IEEE    : 74:4d:bd:ff:fe:6d:58:e1
+#     deCONZ host    : http://core-deconz:40850
+#
+# SANITY (on the HA box), run twice a couple of minutes apart; lastseen must change:
+#     curl -s http://core-deconz:40850/api/7538CF4326/sensors | grep -o '"lastseen":"[^"]*"'
+# ==========================================================================================
+
+rest:
+  - resource: "http://core-deconz:40850/api/7538CF4326/sensors"
+    scan_interval: 15
+    sensor:
+      - name: "Awning sensor last seen"
+        unique_id: awning_sensor_last_seen_deconz
+        device_class: timestamp
+        value_template: >
+          {% set ns = namespace(v=none) %}
+          {% for k, s in value_json.items() %}
+            {% if s.uniqueid is defined and s.uniqueid.startswith('74:4d:bd:ff:fe:6d:58:e1')
+                  and s.lastseen is defined and s.lastseen %}
+              {% set ns.v = s.lastseen %}
+            {% endif %}
+          {% endfor %}
+          {% if ns.v %}{{ as_datetime(ns.v | replace('Z', '+00:00')).isoformat() }}{% endif %}
+
+template:
+  - binary_sensor:
+      # on = deCONZ heard from the sensor in the last 200 s (about 3 keep-alives).
+      - name: "Awning sensor online"
+        unique_id: awning_sensor_online_deconz
+        device_class: connectivity
+        state: >
+          {% set t = as_datetime(states('sensor.awning_sensor_last_seen')) %}
+          {{ t is not none and (now() - t).total_seconds() < 200 }}
+
+      # The deCONZ presence entity, made unavailable while the sensor is offline.
+      - name: "Awning protected checked"
+        unique_id: awning_protected_checked_deconz
+        device_class: occupancy
+        state: "{{ is_state('binary_sensor.REPLACE_WITH_DECONZ_PRESENCE', 'on') }}"
+        availability: >
+          {{ is_state('binary_sensor.awning_sensor_online', 'on')
+             and states('binary_sensor.REPLACE_WITH_DECONZ_PRESENCE') not in ['unknown', 'unavailable'] }}
+
+# ──────────────────────────────────────────────────────────────────────────────────────────
+# EXAMPLE AUTOMATIONS (add to automations.yaml). Replace notify.notify with your phone, e.g.
+# notify.mobile_app_<your_phone>, and cover.awning with your awning.
+#
+#   - alias: "Awning sensor offline"
+#     trigger:
+#       - platform: state
+#         entity_id: binary_sensor.awning_sensor_online
+#         to: "off"
+#     action:
+#       - service: notify.notify
+#         data:
+#           title: "Awning sensor offline"
+#           message: >
+#             No signal since {{ states('sensor.awning_sensor_last_seen') }}.
+#             The awning is not protected. Check the battery.
+#
+#   - alias: "Awning: close when protection triggers or the sensor is offline"
+#     trigger:
+#       - platform: state
+#         entity_id: binary_sensor.awning_protected_checked
+#         to: "on"
+#         for: { seconds: 10 }
+#       - platform: state
+#         entity_id: binary_sensor.awning_sensor_online
+#         to: "off"
+#     condition:
+#       - condition: template
+#         value_template: "{{ states('cover.awning') != 'closed' }}"
+#     action:
+#       - service: cover.close_cover
+#         target: { entity_id: cover.awning }
+# ──────────────────────────────────────────────────────────────────────────────────────────
