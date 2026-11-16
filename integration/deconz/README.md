@@ -127,15 +127,11 @@ notices the silence, and Home Assistant keeps showing the last values. To catch 
 - The firmware sends a keep-alive occupancy report every 60 s (`ALIVE_INTERVAL_S` in
   `awning_config.h`), on top of the 30 min heartbeat with battery.
 - deCONZ stamps `lastseen` on the sensor for every frame it receives.
-- The Home Assistant **deCONZ integration** only marks the entities unavailable when deCONZ
-  flags the sensor as not reachable, which for a battery sensor can take long. So
-  `integration/ha_package_awning_offline.yaml` reads just `lastseen` from the deCONZ API and
-  adds `binary_sensor.awning_sensor_online` (connectivity), `sensor.awning_sensor_last_seen` and
-  `binary_sensor.awning_protected_checked`: your deCONZ presence entity, but **unavailable**
-  while the sensor is offline. It also has example automations that notify you, and close the
-  awning, when the sensor goes offline.
-- If you use the REST-only setup (`ha_package_awning_protection.yaml`) instead of the deCONZ
-  integration, that package already contains the same logic. Do not install both.
+- `integration/ha_package_awning_protection.yaml` turns the presence and battery entities
+  **unavailable** when `lastseen` is older than 200 s, and adds
+  `binary_sensor.awning_sensor_online` (connectivity) and `sensor.awning_protection_last_seen`.
+  It also has an example automation that notifies you, and optionally closes the awning, when
+  the sensor goes offline.
 
 Expect about 3 to 4 minutes from pulling the battery to "unavailable". Instant detection is not
 possible without a powered device; a shorter `ALIVE_INTERVAL_S` (with the 200 s threshold
