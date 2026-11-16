@@ -280,6 +280,7 @@ static void report_task(void *pv)
     bool occupied = false;                 /* latched occupancy state we've reported */
     int64_t last_motion_us = 0;            /* esp_timer time of the most recent activity */
     int64_t last_hb_us = esp_timer_get_time();
+    int64_t last_alive_us = last_hb_us;
 
     /* Move-grace state (classifier): while a burst keeps classifying as a smooth open/close we
      * hold occupancy 0. move_start_us marks when the current smooth burst began; if smooth
@@ -307,6 +308,7 @@ static void report_task(void *pv)
         if (note & REPORT_NOTIFY_JOINED) {
             ESP_LOGI(TAG, "joined — baseline occupancy %d + battery", occupied);
             last_hb_us = now;
+            last_alive_us = now;
             report_occupancy(occupied);
             report_battery_now();
         }
@@ -356,6 +358,12 @@ static void report_task(void *pv)
             awning_log_movement(); /* diagnostic: current movement RMS in the log */
             report_occupancy(occupied);
             report_battery_now();
+            last_alive_us = now;
+        } else if ((now - last_alive_us) >= (int64_t)ALIVE_INTERVAL_S * 1000000) {
+            /* Keep-alive: a small occupancy report so the coordinator's "last seen" stays fresh
+             * and Home Assistant can flag the sensor offline within a few minutes. */
+            last_alive_us = now;
+            report_occupancy(occupied);
         }
     }
 }

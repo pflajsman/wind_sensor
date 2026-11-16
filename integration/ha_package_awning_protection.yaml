@@ -22,8 +22,17 @@
 #
 # Entities created:
 #     binary_sensor.awning_protected            <- use this in automations (occupancy)
+#     binary_sensor.awning_sensor_online        <- connectivity: off = sensor silent / dead
 #     sensor.awning_protection_battery          (%)
+#     sensor.awning_protection_last_seen        (timestamp of the last frame deCONZ received)
 #     sensor.awning_protection_presence_raw     (on/off text, debug)
+#
+# OFFLINE DETECTION: a Zigbee device that loses power (battery pulled) cannot announce it; the
+# coordinator only notices the silence. The firmware sends a keep-alive report every 60 s
+# (ALIVE_INTERVAL_S), deCONZ stamps "lastseen" on every frame, and everything here goes
+# UNAVAILABLE when lastseen is older than OFFLINE_S (200 s). Expect about 3 to 4 minutes from
+# pulling the battery to "unavailable" (60 s keep-alive, deCONZ lastseen has minute resolution,
+# templates with now() re-evaluate once a minute). Faster needs a shorter ALIVE_INTERVAL_S.
 #
 # ────────────────────────────────────────────────────────────────────────────────────────
 # BAKED-IN VALUES
@@ -37,11 +46,21 @@
 
 rest:
   - resource: "http://core-deconz:40850/api/7538CF4326/sensors"
-    scan_interval: 60
+    scan_interval: 15
     sensor:
       # Presence "awning protected" boolean as on/off text (matched by IEEE only).
       - name: "Awning protection presence raw"
         unique_id: awning_protection_presence_raw
+        availability: >
+          {% set ns = namespace(v=none) %}
+          {% for k, s in value_json.items() %}
+            {% if s.uniqueid is defined and s.uniqueid.startswith('74:4d:bd:ff:fe:6d:58:e1')
+                  and s.lastseen is defined and s.lastseen %}
+              {% set ns.v = s.lastseen %}
+            {% endif %}
+          {% endfor %}
+          {% set t = as_datetime(ns.v | replace('Z', '+00:00')) if ns.v else none %}
+          {{ t is not none and (now() - t).total_seconds() < 200 }}
         value_template: >
           {% set ns = namespace(v=none) %}
           {% for k, s in value_json.items() %}
@@ -60,6 +79,16 @@ rest:
         unit_of_measurement: "%"
         device_class: battery
         state_class: measurement
+        availability: >
+          {% set ns = namespace(v=none) %}
+          {% for k, s in value_json.items() %}
+            {% if s.uniqueid is defined and s.uniqueid.startswith('74:4d:bd:ff:fe:6d:58:e1')
+                  and s.lastseen is defined and s.lastseen %}
+              {% set ns.v = s.lastseen %}
+            {% endif %}
+          {% endfor %}
+          {% set t = as_datetime(ns.v | replace('Z', '+00:00')) if ns.v else none %}
+          {{ t is not none and (now() - t).total_seconds() < 200 }}
         value_template: >
           {% set ns = namespace(v=none) %}
           {% for k, s in value_json.items() %}
@@ -73,6 +102,21 @@ rest:
           {% endfor %}
           {% if ns.v is not none %}{{ ns.v }}{% endif %}
 
+      # When deCONZ last received any frame from the sensor (keep-alive, report, poll reply).
+      # Stays available on purpose, so you can see how long the sensor has been silent.
+      - name: "Awning protection last seen"
+        unique_id: awning_protection_last_seen
+        device_class: timestamp
+        value_template: >
+          {% set ns = namespace(v=none) %}
+          {% for k, s in value_json.items() %}
+            {% if s.uniqueid is defined and s.uniqueid.startswith('74:4d:bd:ff:fe:6d:58:e1')
+                  and s.lastseen is defined and s.lastseen %}
+              {% set ns.v = s.lastseen %}
+            {% endif %}
+          {% endfor %}
+          {% if ns.v %}{{ as_datetime(ns.v | replace('Z', '+00:00')).isoformat() }}{% endif %}
+
 # Real occupancy binary_sensor built from the presence text sensor above.
 template:
   - binary_sensor:
@@ -84,6 +128,33 @@ template:
           {{ states('sensor.awning_protection_presence_raw') not in
              ['unknown', 'unavailable'] }}
 
+      # Connectivity: on = deCONZ heard from the sensor in the last 200 s. Use this to alert.
+      - name: "Awning sensor online"
+        unique_id: awning_sensor_online
+        device_class: connectivity
+        state: >
+          {% set t = as_datetime(states('sensor.awning_protection_last_seen')) %}
+          {{ t is not none and (now() - t).total_seconds() < 200 }}
+
+# ──────────────────────────────────────────────────────────────────────────────────────────
+# EXAMPLE AUTOMATION: tell me when the sensor goes offline (add to automations.yaml).
+# Replace notify.notify with your phone, e.g. notify.mobile_app_<your_phone>.
+#   - alias: "Awning sensor offline"
+#     trigger:
+#       - platform: state
+#         entity_id: binary_sensor.awning_sensor_online
+#         to: "off"
+#     action:
+#       - service: notify.notify
+#         data:
+#           title: "Awning sensor offline"
+#           message: >
+#             No signal since {{ states('sensor.awning_protection_last_seen') }}.
+#             The awning is not protected. Check the battery.
+#
+# Fail safe: also close the awning when the sensor is offline, by adding to the automation
+# below a second trigger { platform: state, entity_id: binary_sensor.awning_sensor_online,
+# to: "off" }.
 # ──────────────────────────────────────────────────────────────────────────────────────────
 # EXAMPLE AUTOMATION — add to automations.yaml (NOT here; your config uses automation:!include).
 #   - alias: "Awning: close when protection triggers"
