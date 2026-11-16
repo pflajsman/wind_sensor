@@ -6,3 +6,6 @@ dependencies:
     version: ">=5.2"
   espressif/esp-zigbee-lib:
     version: ">=2.0.0"
+  # SK6812 status LED on IO22 (RMT backend).
+  espressif/led_strip:
+    version: "^3.0.0"

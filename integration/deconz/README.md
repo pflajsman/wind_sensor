@@ -58,23 +58,63 @@ actually sent from the joined node's Basic cluster (0x0000) attrs 0x0004 (manufa
 
 ## Joining / pairing
 
-The sensor pairs on **cold boot** — no pairing button.
+Pairing is controlled by the **user button (IO25)** and the **status LED (IO22)**. The
+sensor scans **all Zigbee channels (11 to 26)**, so it joins any coordinator without a
+reflash.
 
-1. **Open the network first:** Phoscon → ☰ → **Settings → Gateway → Permit join** (~180 s),
-   or deCONZ GUI → **Edit → Permit Join**.
-2. **Cold-boot the sensor** (cell reinsert / **RST**) to trigger commissioning.
-3. Keep the ConBee II near the sensor for the first join.
-4. It joins as a raw node; the DDF binds it (identifiers already match).
+### Pair a new sensor
 
-> **Channel must match.** The firmware pins its scan to **channel 15** (`ZB_CHANNEL` in
-> `main/awning_config.h`). If you move the deCONZ network to a different channel, update
-> `ZB_CHANNEL` and re-flash, or the device won't find its parent. On each join the serial
-> log prints the joined channel/PAN.
+1. **Open the network:** Phoscon: Settings, Gateway, **Permit join** (about 180 s), or deCONZ
+   GUI: **Edit, Permit Join**.
+2. **Power the sensor** (insert the cell, or press **RST**). An unpaired sensor opens a
+   **3 minute pairing window**: the LED **blinks blue**.
+3. When it joins, the LED is **green for 2 s**. deCONZ binds it with the DDF (identifiers
+   already match).
+4. If no open network is found within 3 minutes, the LED is **red for 2 s** and the sensor
+   stops scanning to save the battery. **Short press** the button (or press RST) to try again.
 
-Do **not** use `erase_flash` to force a rejoin — it wipes the IEEE address and creates ghost
-devices. A power-cycle is all that's needed.
+### Move a sensor to another coordinator / factory reset
 
-**After the first pairing, routine wakes rejoin silently — no Permit Join needed.** Because
+1. **Hold the user button for 5 s** until the LED **blinks red fast**, then **release**.
+2. The sensor sends a Zigbee *leave* to its old coordinator (if reachable), erases its network
+   data **and its sensitivity setting**, reboots, and opens a new pairing window (blue blink).
+3. Pair it as above.
+
+Holding the button longer than 20 s cancels (stuck-button protection). Releasing before 5 s is
+a short press, not a reset.
+
+### Button and LED reference
+
+| Action | When | Result |
+|---|---|---|
+| Short press (hold about 1 s) | Paired and connected | LED green flash, sends occupancy + battery now |
+| Short press | Unpaired | Opens / extends the 3 min pairing window |
+| Short press | Paired, coordinator unreachable | Rejoin attempt now |
+| Hold 5 s, release | Any | Factory reset, then pairing window |
+| RST | Any | Reboot. Unpaired: pairing window. Paired: reconnects (LED green 2 s) |
+| Delete in deCONZ / Phoscon | Paired | Sensor resets itself to unpaired (sensitivity kept) and opens a pairing window |
+| Identify in deCONZ | Paired | LED blinks white |
+
+The button cannot wake the sensor from light sleep, so it is sampled once per second: hold a
+short press for about 1 s.
+
+| LED | Meaning |
+|---|---|
+| Blue blink | Pairing window open, searching |
+| Green 2 s | Joined / reconnected |
+| Red 2 s | Pairing window ended without a network |
+| Fast red blink | Long press reached: release to factory reset |
+| Solid red | Factory reset in progress |
+| White blink | Identify |
+| Off | Normal operation |
+
+> **Deleting the sensor in deCONZ while Permit Join is open** makes it rejoin right away
+> (it opens a pairing window after the reset). Close Permit Join first if you want it gone.
+
+Do **not** use `erase_flash` to reset a sensor: use the 5 s button hold. A power-cycle of a
+paired sensor only reconnects it to the same coordinator.
+
+**After pairing, routine wakes rejoin silently, no Permit Join needed.** Because
 this firmware uses **Zigbee light sleep** (not deep sleep), the parent link stays alive the
 whole time via the ZED long-poll, so there is no aging-out and no rejoin race. Reports land
 against a live coordinator instantly.

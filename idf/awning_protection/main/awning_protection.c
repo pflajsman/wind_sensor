@@ -27,6 +27,8 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_timer.h"
+#include "esp_system.h"
+#include "esp_task_wdt.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -42,15 +44,14 @@
 #include "awning_config.h"
 #include "battery.h"
 #include "adxl345.h"
+#include "ui.h"
 
 static const char *TAG = "AWNING_PROT";
 
-/* Set FORCE_REJOIN to 1 to make the device factory-reset + re-pair on EVERY boot, to force a
- * clean join into deCONZ (open Permit Join, flash this, let it join), then set back to 0 and
- * re-flash for normal operation. Do NOT ship with it on. */
-#define FORCE_REJOIN 0
+/* Pairing / reset is controlled by the user button (see ui.c and the "Pairing & reset" section
+ * below). The old FORCE_REJOIN build flag is gone: a 5 s button hold does the same thing. */
 
-static esp_timer_handle_t s_steer_timer;    /* one-shot retry of network steering on failure */
+static esp_timer_handle_t s_steer_timer;    /* one-shot (re)commissioning retry */
 
 /* The report task: woken by the heartbeat timeout OR a motion (INT1) notification; measures
  * occupancy + battery and reports. Nothing else drives reporting anymore. */
@@ -271,6 +272,11 @@ static void report_task(void *pv)
     ESP_LOGI(TAG, "report task live (poll %ds, clear %ds, heartbeat %ds)",
              MOTION_POLL_S, OCCUPANCY_CLEAR_S, HB_INTERVAL_S);
 
+    /* Hang protection: this task wakes every MOTION_POLL_S, so it feeds the task watchdog on
+     * every loop. If it ever gets stuck (I2C, stack lock, ...) for CONFIG_ESP_TASK_WDT_TIMEOUT_S
+     * the watchdog panics and the chip reboots instead of sitting dead until someone presses RST. */
+    esp_task_wdt_add(NULL);
+
     bool occupied = false;                 /* latched occupancy state we've reported */
     int64_t last_motion_us = 0;            /* esp_timer time of the most recent activity */
     int64_t last_hb_us = esp_timer_get_time();
@@ -288,6 +294,10 @@ static void report_task(void *pv)
          * activity latch ourselves each cycle. The CPU still light-sleeps between polls. */
         uint32_t note = 0;
         xTaskNotifyWait(0, UINT32_MAX, &note, pdMS_TO_TICKS((uint64_t)MOTION_POLL_S * 1000));
+        esp_task_wdt_reset();
+
+        /* User button shares this wakeup (IO25 can't wake light sleep on its own). */
+        ui_tick();
 
         if (!s_joined) continue; /* not on a network yet — join signal re-triggers reporting */
 
@@ -369,12 +379,13 @@ static void report_now(void)
 /* ------------------------------------------------------------------------------------- */
 static uint8_t s_retry_mode = EZB_BDB_MODE_INITIALIZATION;
 
-/* Steer-retry backoff: fast at first so a freshly-opened Permit Join lands within a few
- * seconds, then stretch out and cap so an un-joined *battery* device doesn't scan itself
- * flat while it waits for a network to open. Reset to STEER_BACKOFF_MIN on a real join. */
-#define STEER_BACKOFF_MIN_S 3u
-#define STEER_BACKOFF_MAX_S 60u
-static uint32_t s_steer_backoff_s = STEER_BACKOFF_MIN_S;
+/* Rejoin backoff (already-paired device whose coordinator doesn't answer): fast at first,
+ * then stretch out and cap so a battery device doesn't scan itself flat while the coordinator
+ * is down. Reset to REJOIN_BACKOFF_MIN on a successful (re)join or a short button press.
+ * Pairing of an UNPAIRED device does not use this; it runs in a time-limited window below. */
+#define REJOIN_BACKOFF_MIN_S 3u
+#define REJOIN_BACKOFF_MAX_S 60u
+static uint32_t s_rejoin_backoff_s = REJOIN_BACKOFF_MIN_S;
 
 static void commissioning_retry_cb(void *arg)
 {
@@ -383,24 +394,194 @@ static void commissioning_retry_cb(void *arg)
     esp_zigbee_lock_release();
 }
 
-/* Returns the delay (seconds) it scheduled, so callers can log it. */
-static uint32_t schedule_commissioning_retry(uint8_t mode)
+/* Start `mode` commissioning after delay_s, off the signal-handler stack (inline retry spins). */
+static void schedule_commissioning(uint8_t mode, uint32_t delay_s)
 {
     s_retry_mode = mode;
     if (!s_steer_timer) {
         const esp_timer_create_args_t a = { .callback = commissioning_retry_cb, .name = "comm" };
         esp_timer_create(&a, &s_steer_timer);
     }
-    uint32_t delay_s = s_steer_backoff_s;
     esp_timer_stop(s_steer_timer);
     esp_timer_start_once(s_steer_timer, (uint64_t)delay_s * 1000000ULL);
+}
+
+/* Rejoin retry with backoff. Returns the delay (seconds) it scheduled, so callers can log it. */
+static uint32_t schedule_commissioning_retry(uint8_t mode)
+{
+    uint32_t delay_s = s_rejoin_backoff_s;
+    schedule_commissioning(mode, delay_s);
 
     /* Advance backoff: 3 → 6 → 12 → 24 → 48 → 60 (capped). */
-    if (s_steer_backoff_s < STEER_BACKOFF_MAX_S) {
-        s_steer_backoff_s = (s_steer_backoff_s < 6u) ? 6u : s_steer_backoff_s * 2u;
-        if (s_steer_backoff_s > STEER_BACKOFF_MAX_S) s_steer_backoff_s = STEER_BACKOFF_MAX_S;
+    if (s_rejoin_backoff_s < REJOIN_BACKOFF_MAX_S) {
+        s_rejoin_backoff_s = (s_rejoin_backoff_s < 6u) ? 6u : s_rejoin_backoff_s * 2u;
+        if (s_rejoin_backoff_s > REJOIN_BACKOFF_MAX_S) s_rejoin_backoff_s = REJOIN_BACKOFF_MAX_S;
     }
     return delay_s;
+}
+
+/* ------------------------------------------------------------------------------------- */
+/* Pairing & reset                                                                        */
+/*                                                                                        */
+/*  - Unpaired (factory-new) sensor: on power-up / RST it opens a PAIR_WINDOW_S pairing     */
+/*    window (blue blink), steering every PAIR_RETRY_S on all channels. Joined -> green.    */
+/*    Window runs out -> red, then idle (no scanning) until a short press or RST.          */
+/*  - Short press: joined -> green flash + immediate report; unpaired -> (re)open window;  */
+/*    paired but coordinator unreachable -> rejoin attempt now.                            */
+/*  - Hold 5 s (LED fast red), release: factory reset. Sends a Zigbee leave if on a network,*/
+/*    erases network data + sensitivity, reboots into a fresh pairing window.              */
+/*  - Coordinator removes the device (leave without rejoin): wipe network data, reboot into */
+/*    a fresh pairing window. Sensitivity is kept.                                         */
+/*                                                                                        */
+/* Functions marked [stack] run in the Zigbee stack context (signal handler, task-queue    */
+/* callbacks, or the commissioning timer under the stack lock).                            */
+/* ------------------------------------------------------------------------------------- */
+static volatile bool s_stack_ready = false;   /* set at SKIP_STARTUP; gates UI -> stack posts */
+static bool s_pair_open = false;              /* [stack] pairing window active */
+static int64_t s_pair_deadline_us = 0;        /* [stack] esp_timer time the window closes */
+static esp_timer_handle_t s_reset_fallback_timer;
+
+/* [stack] Open (or extend) the pairing window. start_now = steer immediately, else after
+ * PAIR_RETRY_S (used from a failure signal, where an inline restart would spin). */
+static void pairing_open(bool start_now)
+{
+    s_pair_open = true;
+    s_pair_deadline_us = esp_timer_get_time() + (int64_t)PAIR_WINDOW_S * 1000000;
+    ui_led(UI_LED_PAIRING, 0);
+    ESP_LOGI(TAG, "Pairing window open for %ds: enable Permit Join on the coordinator", PAIR_WINDOW_S);
+    if (start_now) {
+        ezb_bdb_start_top_level_commissioning(EZB_BDB_MODE_NETWORK_STEERING);
+    } else {
+        schedule_commissioning(EZB_BDB_MODE_NETWORK_STEERING, PAIR_RETRY_S);
+    }
+}
+
+/* [stack] A steering attempt found no open network: retry inside the window, else close it. */
+static void pairing_retry_or_close(uint8_t status)
+{
+    if (s_pair_open && esp_timer_get_time() < s_pair_deadline_us) {
+        ESP_LOGI(TAG, "No open network yet (0x%02x); retry in %ds", status, PAIR_RETRY_S);
+        schedule_commissioning(EZB_BDB_MODE_NETWORK_STEERING, PAIR_RETRY_S);
+        return;
+    }
+    s_pair_open = false;
+    ui_led(UI_LED_FAILED, LED_FAILED_MS);
+    ESP_LOGW(TAG, "Pairing window closed without a network. Press the button (or RST) to retry.");
+}
+
+/* [stack] Short press. */
+static void short_press_stack(void *ctx)
+{
+    if (s_joined) {
+        ui_led(UI_LED_ACK, LED_ACK_MS);
+        report_now(); /* fresh occupancy + battery: handy to check the link from the coordinator */
+    } else if (ezb_bdb_is_factory_new()) {
+        if (s_pair_open) {
+            s_pair_deadline_us = esp_timer_get_time() + (int64_t)PAIR_WINDOW_S * 1000000;
+            ui_led(UI_LED_PAIRING, 0);
+            ESP_LOGI(TAG, "Pairing window extended to %ds", PAIR_WINDOW_S);
+        } else {
+            pairing_open(true);
+        }
+    } else {
+        /* Paired, but the coordinator isn't answering: try a rejoin right now. */
+        ESP_LOGI(TAG, "Rejoin requested by button");
+        s_rejoin_backoff_s = REJOIN_BACKOFF_MIN_S;
+        schedule_commissioning(EZB_BDB_MODE_INITIALIZATION, 1);
+    }
+}
+
+/* [stack] Wipe all Zigbee data and reboot (does not return). */
+static void factory_reset_stack(void *ctx)
+{
+    ESP_LOGW(TAG, "Factory reset: erasing Zigbee data and rebooting");
+    esp_zigbee_factory_reset();
+}
+
+/* [stack] Proper leave: tells the coordinator, clears data, then signals LEAVE (type RESET),
+ * whose handler finishes with factory_reset_stack(). */
+static void local_reset_stack(void *ctx)
+{
+    ezb_bdb_reset_via_local_action();
+}
+
+/* Any context: wipe Zigbee data without a leave and reboot. */
+static void factory_reset_now(void)
+{
+    if (esp_zigbee_task_queue_post(factory_reset_stack, NULL) != ESP_OK) {
+        /* Stack not running: erase its storage directly. */
+        nvs_flash_erase_partition(ESP_ZIGBEE_STORAGE_PARTITION_NAME);
+        esp_restart();
+    }
+}
+
+static void reset_fallback_cb(void *arg)
+{
+    ESP_LOGW(TAG, "No leave confirmation in %ds; resetting locally", FACTORY_RESET_FALLBACK_S);
+    factory_reset_now();
+}
+
+/* Erase app settings (sensitivity) so a factory-reset sensor starts at the defaults. */
+static void app_settings_erase(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(THRESH_NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_all(h);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+/* UI task context: button callbacks. Hand stack work to the Zigbee task queue. */
+static void on_short_press(void)
+{
+    if (!s_stack_ready) return;
+    esp_zigbee_task_queue_post(short_press_stack, NULL);
+}
+
+static void on_long_press(void)
+{
+    ui_led(UI_LED_RESETTING, 0);
+    app_settings_erase();
+
+    if (s_stack_ready && s_joined) {
+        const esp_timer_create_args_t a = { .callback = reset_fallback_cb, .name = "rst" };
+        if (!s_reset_fallback_timer) esp_timer_create(&a, &s_reset_fallback_timer);
+        esp_timer_start_once(s_reset_fallback_timer, (uint64_t)FACTORY_RESET_FALLBACK_S * 1000000ULL);
+        if (esp_zigbee_task_queue_post(local_reset_stack, NULL) == ESP_OK) return;
+        esp_timer_stop(s_reset_fallback_timer);
+    }
+    /* Not on a network (or the post failed): no leave to send, reset straight away. */
+    factory_reset_now();
+}
+
+/* ------------------------------------------------------------------------------------- */
+/* Link loss: the parent stopped answering keep-alive polls (router unplugged / rebooted,     */
+/* coordinator restarted, RF blocked). The stack does NOT find a new parent by itself, so     */
+/* without this the sensor stayed "unavailable" until someone pressed RST. We do exactly what */
+/* RST did: reboot. The boot path rejoins with stored keys (any parent on the channel) and     */
+/* retries with backoff if the network is still down. Network data is NOT erased.             */
+/* ------------------------------------------------------------------------------------- */
+static esp_timer_handle_t s_link_loss_timer;
+
+static void link_loss_reboot_cb(void *arg)
+{
+    ESP_LOGW(TAG, "Rebooting to rejoin after link loss");
+    esp_restart();
+}
+
+/* [stack] */
+static void link_lost(const char *why)
+{
+    if (s_link_loss_timer) return; /* reboot already pending */
+    s_joined = false;
+    ESP_LOGW(TAG, "Link to parent lost (%s): reboot + rejoin in %ds", why, LINK_LOSS_REBOOT_DELAY_S);
+    const esp_timer_create_args_t a = { .callback = link_loss_reboot_cb, .name = "linkloss" };
+    if (esp_timer_create(&a, &s_link_loss_timer) == ESP_OK) {
+        esp_timer_start_once(s_link_loss_timer, (uint64_t)LINK_LOSS_REBOOT_DELAY_S * 1000000ULL);
+    } else {
+        esp_restart();
+    }
 }
 
 /* ------------------------------------------------------------------------------------- */
@@ -411,9 +592,26 @@ static uint32_t schedule_commissioning_retry(uint8_t mode)
 /* ------------------------------------------------------------------------------------- */
 static void zcl_action_handler(ezb_zcl_core_action_callback_id_t cb_id, void *message)
 {
-    if (cb_id != EZB_ZCL_CORE_SET_ATTR_VALUE_CB_ID || !message) return;
+    if (!message) return;
+
+    /* Identify "effect" command (e.g. deCONZ/Phoscon "identify"): short white blink. */
+    if (cb_id == EZB_ZCL_CORE_IDENTIFY_EFFECT_CB_ID) {
+        ui_led(UI_LED_IDENTIFY, 3000);
+        return;
+    }
+    if (cb_id != EZB_ZCL_CORE_SET_ATTR_VALUE_CB_ID) return;
 
     const ezb_zcl_set_attr_value_message_t *m = message;
+
+    /* Identify command sets IdentifyTime (seconds); 0 stops identifying. */
+    if (m->info.cluster_id == EZB_ZCL_CLUSTER_ID_IDENTIFY &&
+        m->in.attribute.id == EZB_ZCL_ATTR_IDENTIFY_IDENTIFY_TIME_ID &&
+        m->in.attribute.data.value) {
+        uint16_t t = *(const uint16_t *)m->in.attribute.data.value;
+        ui_led(t ? UI_LED_IDENTIFY : UI_LED_OFF, (uint32_t)t * 1000);
+        return;
+    }
+
     if (m->info.cluster_id != EZB_ZCL_CLUSTER_ID_OCCUPANCY_SENSING ||
         m->in.attribute.id != EZB_ZCL_ATTR_OCCUPANCY_SENSING_PIR_UNOCCUPIED_TO_OCCUPIED_THRESHOLD_ID ||
         !m->in.attribute.data.value) {
@@ -440,6 +638,7 @@ static bool app_signal_handler(const ezb_app_signal_t *app_signal)
     switch (sig) {
     case EZB_ZDO_SIGNAL_SKIP_STARTUP:
         ESP_LOGI(TAG, "Zigbee stack initialized");
+        s_stack_ready = true;
         ezb_bdb_start_top_level_commissioning(EZB_BDB_MODE_INITIALIZATION);
         break;
 
@@ -449,14 +648,13 @@ static bool app_signal_handler(const ezb_app_signal_t *app_signal)
         if (status == EZB_BDB_STATUS_SUCCESS) {
             ESP_LOGI(TAG, "Started up in%s factory-reset mode", ezb_bdb_is_factory_new() ? "" : " non");
             if (ezb_bdb_is_factory_new()) {
-                ESP_LOGI(TAG, "Fresh device: network steering (open Permit Join)");
-                ezb_bdb_start_top_level_commissioning(EZB_BDB_MODE_NETWORK_STEERING);
-            } else if (FORCE_REJOIN) {
-                ESP_LOGW(TAG, "FORCE_REJOIN build flag — factory reset, will re-join fresh");
-                ezb_bdb_reset_via_local_action();
+                ESP_LOGI(TAG, "Unpaired device: opening pairing window");
+                pairing_open(true);
             } else {
                 ESP_LOGI(TAG, "Device rebooted — already joined; report task will report + light-sleep");
+                s_rejoin_backoff_s = REJOIN_BACKOFF_MIN_S;
                 s_joined = true;
+                ui_led(UI_LED_JOINED, LED_JOINED_MS); /* e.g. after a battery swap: "I'm back" */
                 report_now();
             }
         } else if (!ezb_bdb_is_factory_new()) {
@@ -472,13 +670,11 @@ static bool app_signal_handler(const ezb_app_signal_t *app_signal)
                           "retry rejoin in %us (channel mask 0x%08lx)",
                      status, (unsigned)d, (unsigned long)ZB_CHANNEL_MASK);
         } else {
-            /* FACTORY-NEW and init failed: genuinely no network to join yet. Keep STEERING
-             * until deCONZ opens Permit Join on our channel. */
-            uint32_t d = schedule_commissioning_retry(EZB_BDB_MODE_NETWORK_STEERING);
-            ESP_LOGW(TAG, "Init/join failed (0x%02x=NO_NETWORK) — no open network on scanned "
-                          "channels (mask 0x%08lx); retry steering in %us. Check deCONZ "
-                          "Permit Join + channel.",
-                     status, (unsigned long)ZB_CHANNEL_MASK, (unsigned)d);
+            /* FACTORY-NEW and init failed: no network yet. Pair inside the time-limited window
+             * (steering is scheduled, not started inline, so a failure can't spin). */
+            ESP_LOGW(TAG, "Init failed (0x%02x) on an unpaired device", status);
+            if (s_pair_open) pairing_retry_or_close(status);
+            else             pairing_open(false);
         }
     } break;
 
@@ -487,25 +683,45 @@ static bool app_signal_handler(const ezb_app_signal_t *app_signal)
         if (status == EZB_BDB_STATUS_SUCCESS) {
             ESP_LOGI(TAG, "Joined: PAN 0x%04hx, channel %d, short 0x%04hx",
                      ezb_nwk_get_panid(), ezb_nwk_get_current_channel(), ezb_nwk_get_short_address());
-            s_steer_backoff_s = STEER_BACKOFF_MIN_S; /* joined — next un-join starts fast again */
+            s_rejoin_backoff_s = REJOIN_BACKOFF_MIN_S;
+            s_pair_open = false;
             s_joined = true;
+            ui_led(UI_LED_JOINED, LED_JOINED_MS);
             /* FRESH JOIN: report right away so deCONZ instantiates a value. No settle window is
              * needed — in light sleep the link stays up, so deCONZ's descriptor read + bind +
              * report-config all land against a reachable device on its own schedule. */
             report_now();
         } else {
-            uint32_t d = schedule_commissioning_retry(EZB_BDB_MODE_NETWORK_STEERING);
-            ESP_LOGW(TAG, "Steering failed (0x%02x=NO_NETWORK) — no open network on scanned "
-                          "channels (mask 0x%08lx); retry in %us. Open deCONZ Permit Join.",
-                     status, (unsigned long)ZB_CHANNEL_MASK, (unsigned)d);
+            pairing_retry_or_close(status);
         }
     } break;
 
-    case EZB_ZDO_SIGNAL_LEAVE:
-        /* Removed from the network (e.g. deCONZ delete). Stop reporting until we rejoin;
-         * the stack will re-run steering/init and re-set s_joined on success. */
+    case EZB_ZDO_SIGNAL_LEAVE: {
         s_joined = false;
-        ESP_LOGW(TAG, "Left network — pausing reports until rejoin");
+        const ezb_zdo_signal_leave_params_t *lp = ezb_app_signal_get_params(app_signal);
+        if (lp && lp->leave_type == EZB_ZDO_LEAVE_TYPE_REJOIN) {
+            /* Leave-with-rejoin: the stack rejoins on its own and re-signals on success. */
+            ESP_LOGW(TAG, "Left network (rejoin requested) — pausing reports until rejoin");
+            break;
+        }
+        /* Leave without rejoin: either our own button reset finished, or the coordinator
+         * removed us (deCONZ delete). Wipe all network data and reboot; the sensor comes back
+         * factory-new with a fresh pairing window. */
+        if (s_reset_fallback_timer) esp_timer_stop(s_reset_fallback_timer);
+        ESP_LOGW(TAG, "Left network (no rejoin) — resetting to unpaired");
+        ui_led(UI_LED_RESETTING, 0);
+        factory_reset_stack(NULL);
+    } break;
+
+    case EZB_NWK_SIGNAL_NETWORK_STATUS: {
+        const ezb_nwk_signal_network_status_params_t *ns = ezb_app_signal_get_params(app_signal);
+        uint8_t st = ns ? ns->status : 0xff;
+        ESP_LOGW(TAG, "NWK status 0x%02x (addr 0x%04hx)", st, ns ? ns->network_addr : 0);
+        if (s_joined && st == EZB_NWK_NETWORK_STATUS_PARENT_LINK_FAILURE) link_lost("parent link failure");
+    } break;
+
+    case EZB_NWK_SIGNAL_NO_ACTIVE_LINKS_LEFT:
+        if (s_joined) link_lost("no active links left");
         break;
 
     default:
@@ -605,6 +821,10 @@ static void zigbee_main_task(void *pv)
 
 void app_main(void)
 {
+    /* Why did we (re)boot? Field diagnostics: PANIC / TASK_WDT = firmware fault, SW = our own
+     * reboot (link loss / reset), POWERON / EXT = battery insert / RST. */
+    ESP_LOGW(TAG, "boot: reset reason %d", (int)esp_reset_reason());
+
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(nvs_flash_init_partition(ESP_ZIGBEE_STORAGE_PARTITION_NAME));
 
@@ -635,9 +855,14 @@ void app_main(void)
     ESP_ERROR_CHECK(light_sleep_pm_config());
 #endif
 
+    /* User button + status LED (pairing / reset control). Non-fatal if the LED fails. */
+    const ui_callbacks_t ui_cb = { .on_short_press = on_short_press, .on_long_press = on_long_press };
+    if (ui_init(&ui_cb) != ESP_OK) ESP_LOGW(TAG, "button/LED init failed");
+
     /* Report task: heartbeat + motion-driven reporting. Starts blocked until joined. */
     start_report_task();
 
-    ESP_LOGI(TAG, "Start ESP Zigbee stack (channel %d, light sleep)", ZB_CHANNEL);
+    ESP_LOGI(TAG, "Start ESP Zigbee stack (channel mask 0x%08lx, light sleep)",
+             (unsigned long)ZB_CHANNEL_MASK);
     xTaskCreate(zigbee_main_task, "Zigbee_main", 4096, NULL, 5, NULL);
 }
