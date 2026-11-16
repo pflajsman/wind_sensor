@@ -442,6 +442,8 @@ static volatile bool s_stack_ready = false;   /* set at SKIP_STARTUP; gates UI -
 static bool s_pair_open = false;              /* [stack] pairing window active */
 static int64_t s_pair_deadline_us = 0;        /* [stack] esp_timer time the window closes */
 static esp_timer_handle_t s_reset_fallback_timer;
+static volatile bool s_reset_requested = false; /* set by the 5 s button hold only */
+static int64_t s_fresh_join_us = 0;           /* [stack] time of the last fresh join, 0 = none */
 
 /* [stack] Open (or extend) the pairing window. start_now = steer immediately, else after
  * PAIR_RETRY_S (used from a failure signal, where an inline restart would spin). */
@@ -595,6 +597,7 @@ static void on_short_press(void)
 static void on_long_press(void)
 {
     ui_led(UI_LED_RESETTING, 0);
+    s_reset_requested = true;
     app_settings_erase();
 
     if (s_stack_ready && s_joined) {
@@ -627,6 +630,12 @@ static void link_loss_reboot_cb(void *arg)
 static void link_lost(const char *why)
 {
     if (s_link_loss_timer) return; /* reboot already pending */
+    if (s_fresh_join_us &&
+        esp_timer_get_time() - s_fresh_join_us < (int64_t)LINK_LOSS_GRACE_S * 1000000) {
+        ESP_LOGW(TAG, "Link loss (%s) within %ds of joining: ignored, not rebooting",
+                 why, LINK_LOSS_GRACE_S);
+        return;
+    }
     s_joined = false;
     ESP_LOGW(TAG, "Link to parent lost (%s): reboot + rejoin in %ds", why, LINK_LOSS_REBOOT_DELAY_S);
     const esp_timer_create_args_t a = { .callback = link_loss_reboot_cb, .name = "linkloss" };
@@ -739,6 +748,7 @@ static bool app_signal_handler(const ezb_app_signal_t *app_signal)
             s_rejoin_backoff_s = REJOIN_BACKOFF_MIN_S;
             s_pair_open = false;
             s_joined = true;
+            s_fresh_join_us = esp_timer_get_time();
             /* FRESH JOIN: poll fast and stay awake for INTERVIEW_S so deCONZ can finish its
              * descriptor reads, binds and report config (at the normal 4 s poll it can time out
              * and leave the sensor half set up). LED stays blue, then green. Report right away
@@ -758,13 +768,19 @@ static bool app_signal_handler(const ezb_app_signal_t *app_signal)
             ESP_LOGW(TAG, "Left network (rejoin requested) — pausing reports until rejoin");
             break;
         }
-        /* Leave without rejoin: either our own button reset finished, or the coordinator
-         * removed us (deCONZ delete). Wipe all network data and reboot; the sensor comes back
-         * factory-new with a fresh pairing window. */
-        if (s_reset_fallback_timer) esp_timer_stop(s_reset_fallback_timer);
-        ESP_LOGW(TAG, "Left network (no rejoin) — resetting to unpaired");
-        ui_led(UI_LED_RESETTING, 0);
-        factory_reset_stack(NULL);
+        /* Leave without rejoin. Only our own 5 s button reset wipes the sensor. A leave from
+         * anywhere else (deCONZ, a stale entry, a parent clean-up) just pauses reports, as the
+         * pre-button firmware did: wiping + rebooting here made deCONZ create the sensor and
+         * then delete it again during pairing. Re-pair with the button if needed. */
+        if (s_reset_requested) {
+            if (s_reset_fallback_timer) esp_timer_stop(s_reset_fallback_timer);
+            ESP_LOGW(TAG, "Left network after button reset — erasing and rebooting");
+            ui_led(UI_LED_RESETTING, 0);
+            factory_reset_stack(NULL);
+            break;
+        }
+        ESP_LOGW(TAG, "Left network (no rejoin, not requested by us) — pausing reports. "
+                      "Hold the button 5 s to re-pair if it does not come back.");
     } break;
 
     case EZB_NWK_SIGNAL_NETWORK_STATUS: {

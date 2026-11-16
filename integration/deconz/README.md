@@ -59,8 +59,8 @@ actually sent from the joined node's Basic cluster (0x0000) attrs 0x0004 (manufa
 ## Joining / pairing
 
 Pairing is controlled by the **user button (IO25)** and the **status LED (IO22)**. The
-sensor scans **all Zigbee channels (11 to 26)**, so it joins any coordinator without a
-reflash.
+sensor only looks on **channel 15** (`ZB_CHANNEL` in `awning_config.h`), which must match
+your deCONZ network channel. Set `ZB_CHANNEL_MASK` to `0x07FFF800UL` to scan all channels.
 
 ### Pair a new sensor
 
@@ -94,7 +94,7 @@ a short press, not a reset.
 | Short press | Paired, coordinator unreachable | Rejoin attempt now |
 | Hold 5 s, release | Any | Factory reset, then pairing window |
 | RST | Any | Reboot. Unpaired: pairing window. Paired: reconnects (LED green 2 s) |
-| Delete in deCONZ / Phoscon | Paired | Sensor resets itself to unpaired (sensitivity kept) and opens a pairing window |
+| Delete in deCONZ / Phoscon | Paired | Sensor stops reporting. Hold the button 5 s to pair it again |
 | Identify in deCONZ | Paired | LED blinks white |
 
 The button cannot wake the sensor from light sleep, so it is sampled once per second: hold a

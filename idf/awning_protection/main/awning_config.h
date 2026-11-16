@@ -15,11 +15,12 @@
 #define ZB_MANUFACTURER_STR "DIY"
 #define ZB_MODEL_STR        "awning-protection"
 
-/* --- Zigbee channels ------------------------------------------------------------------ */
-/* Pairing scans ALL Zigbee channels (11-26), so the sensor joins any coordinator without a
- * reflash. After the first join the stack stores the network's channel and every rejoin goes
- * straight to it, so the wider mask only costs time during pairing. */
-#define ZB_CHANNEL_MASK  0x07FFF800UL   /* channels 11..26 */
+/* --- Zigbee channel (deCONZ) ---------------------------------------------------------- */
+/* Pairing only looks on the coordinator's channel, as before the button firmware: it cannot
+ * join a neighbour's open network by mistake. MUST match your deCONZ network channel. To let
+ * the sensor find any coordinator, set ZB_CHANNEL_MASK to 0x07FFF800UL (channels 11..26). */
+#define ZB_CHANNEL       15
+#define ZB_CHANNEL_MASK  (1UL << ZB_CHANNEL)
 
 /* --- Link loss -------------------------------------------------------------------------- */
 /* ed_timeout in ESP_ZIGBEE_ZED_CONFIG() below (4 min) is, on an end device, how long keep-alive polls may keep failing
@@ -27,6 +28,9 @@
  * When the parent is lost the firmware reboots after LINK_LOSS_REBOOT_DELAY_S; the boot path
  * then rejoins (with backoff), finding a new parent if the old router is gone. */
 #define LINK_LOSS_REBOOT_DELAY_S   2
+/* Link loss is ignored for this long after a fresh join, so a stray parent-link status while
+ * deCONZ sets the sensor up cannot reboot it in the middle (deCONZ then deletes the sensor). */
+#define LINK_LOSS_GRACE_S        300
 
 /* --- Pairing window -------------------------------------------------------------------- */
 /* An unpaired sensor searches for an open network (deCONZ "Permit join") for this long, then

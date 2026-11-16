@@ -130,9 +130,9 @@ Two bugs made motion "not react" during development, both fixed by the poll-base
 ### ZED config
 
 `ed_timeout = 4 min`, `keep_alive = 4000 ms` (`ESP_ZIGBEE_ZED_CONFIG()` in
-`awning_config.h`). `rx_on_when_idle = false`. Pairing scans **all channels 11 to 26**
-(`ZB_CHANNEL_MASK = 0x07FFF800`); after the first join the stack stores the channel, so
-rejoins go straight to it.
+`awning_config.h`). `rx_on_when_idle = false`. Pairing only scans **channel 15**
+(`ZB_CHANNEL`, `ZB_CHANNEL_MASK = 1 << 15`), as the pre-button firmware did, so it cannot
+join a neighbour's open network. `0x07FFF800` scans 11 to 26.
 
 ---
 
@@ -158,8 +158,11 @@ rejoins go straight to it.
   An unpaired sensor no longer scans forever.
 - `EZB_ZDO_SIGNAL_LEAVE`:
   - leave **with** rejoin → clear `s_joined`, the stack rejoins on its own;
-  - leave **without** rejoin (our own button reset finished, or deCONZ deleted us) →
-    `esp_zigbee_factory_reset()` (wipes Zigbee data, reboots) → boots factory-new → pairing window.
+  - leave **without** rejoin after our own 5 s button reset (`s_reset_requested`) →
+    `esp_zigbee_factory_reset()` (wipes Zigbee data, reboots) → boots factory-new → pairing window;
+  - any other leave without rejoin (deCONZ delete, stale entry) → only clear `s_joined` and
+    pause reports, as before the button firmware. Wiping + rebooting here made deCONZ create
+    the sensor during pairing and then delete it again.
 
 ### User button (IO25) and LED (IO22), `main/ui.c`
 
@@ -183,7 +186,8 @@ rejoins go straight to it.
 - On an end device `ed_timeout` is how long keep-alive polls may fail before the stack declares
   the parent lost. It was 64 min; now 4 min.
 - `EZB_NWK_SIGNAL_NETWORK_STATUS` with `PARENT_LINK_FAILURE` (or `NO_ACTIVE_LINKS_LEFT`) →
-  `link_lost()` → reboot after 2 s. The boot path rejoins with the stored keys and backs off
+  `link_lost()` → reboot after 2 s, except within `LINK_LOSS_GRACE_S` (300 s) of a fresh
+  join, where it is only logged so the deCONZ setup is not cut off. The boot path rejoins with the stored keys and backs off
   if the network is still down. Before this, nothing handled parent loss: the sensor stayed
   unavailable until RST.
 - Task watchdog: the report task feeds it every 1 s; `CONFIG_ESP_TASK_WDT_PANIC=y`,
