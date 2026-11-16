@@ -119,27 +119,6 @@ this firmware uses **Zigbee light sleep** (not deep sleep), the parent link stay
 whole time via the ZED long-poll, so there is no aging-out and no rejoin race. Reports land
 against a live coordinator instantly.
 
-## Knowing when the sensor is offline
-
-A Zigbee device that loses power (battery pulled or flat) cannot say so; the coordinator only
-notices the silence, and Home Assistant keeps showing the last values. To catch that:
-
-- The firmware sends a keep-alive occupancy report every 60 s (`ALIVE_INTERVAL_S` in
-  `awning_config.h`), on top of the 30 min heartbeat with battery.
-- deCONZ stamps `lastseen` on the sensor for every frame it receives.
-- `integration/ha_package_awning_protection.yaml` turns the presence and battery entities
-  **unavailable** when `lastseen` is older than 200 s, and adds
-  `binary_sensor.awning_sensor_online` (connectivity) and `sensor.awning_protection_last_seen`.
-  It also has an example automation that notifies you, and optionally closes the awning, when
-  the sensor goes offline.
-
-Expect about 3 to 4 minutes from pulling the battery to "unavailable". Instant detection is not
-possible without a powered device; a shorter `ALIVE_INTERVAL_S` (with the 200 s threshold
-scaled to about 3x the interval) makes it faster at a small battery cost.
-
-Check that `lastseen` moves: `curl -s http://core-deconz:40850/api/<key>/sensors | grep lastseen`
-a couple of minutes apart.
-
 ## Verify
 
 - Phoscon: the sensor appears as a **Motion** card with a battery %. Shake it → it flips to

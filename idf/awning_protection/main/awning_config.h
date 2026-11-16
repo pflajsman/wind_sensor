@@ -120,12 +120,6 @@
  * this is just the keep-fresh cadence. 30 min is fine on battery now that the radio idles in
  * light sleep rather than paying a rejoin every wake. */
 #define HB_INTERVAL_S       1800   /* 30 min heartbeat report (occupancy + battery) */
-/* Keep-alive: one occupancy report (no battery read, no ADXL window) every ALIVE_INTERVAL_S.
- * A Zigbee device that loses power cannot announce it, so the coordinator only notices the
- * silence. deCONZ updates the sensor's "lastseen" on every frame; Home Assistant marks the
- * sensor offline when lastseen is older than ~3 x this interval (integration/ha_package_*).
- * Cost: one short TX per minute, small next to the ~1 to 2 mA light-sleep idle. */
-#define ALIVE_INTERVAL_S      60
 
 /* --- Motion-latch occupancy ------------------------------------------------------------ */
 /* Occupancy is driven by the ADXL345 ACTIVITY interrupt, not a re-measured RMS window: when
