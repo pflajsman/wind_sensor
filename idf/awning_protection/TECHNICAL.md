@@ -130,9 +130,9 @@ Two bugs made motion "not react" during development, both fixed by the poll-base
 ### ZED config
 
 `ed_timeout = 4 min`, `keep_alive = 4000 ms` (`ESP_ZIGBEE_ZED_CONFIG()` in
-`awning_config.h`). `rx_on_when_idle = false`. Pairing only scans **channel 15**
-(`ZB_CHANNEL`, `ZB_CHANNEL_MASK = 1 << 15`), as the pre-button firmware did, so it cannot
-join a neighbour's open network. `0x07FFF800` scans 11 to 26.
+`awning_config.h`). `rx_on_when_idle = false`. Pairing scans **all channels 11 to 26**
+(`ZB_CHANNEL_MASK = 0x07FFF800`), so any coordinator works without a reflash; after the first
+join the stack stores the channel, so rejoins go straight to it.
 
 ---
 

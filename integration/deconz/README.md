@@ -59,8 +59,8 @@ actually sent from the joined node's Basic cluster (0x0000) attrs 0x0004 (manufa
 ## Joining / pairing
 
 Pairing is controlled by the **user button (IO25)** and the **status LED (IO22)**. The
-sensor only looks on **channel 15** (`ZB_CHANNEL` in `awning_config.h`), which must match
-your deCONZ network channel. Set `ZB_CHANNEL_MASK` to `0x07FFF800UL` to scan all channels.
+sensor scans **all Zigbee channels (11 to 26)**, so it joins any coordinator without a
+reflash. It only joins a network with Permit Join open.
 
 ### Pair a new sensor
 

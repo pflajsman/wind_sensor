@@ -15,12 +15,12 @@
 #define ZB_MANUFACTURER_STR "DIY"
 #define ZB_MODEL_STR        "awning-protection"
 
-/* --- Zigbee channel (deCONZ) ---------------------------------------------------------- */
-/* Pairing only looks on the coordinator's channel, as before the button firmware: it cannot
- * join a neighbour's open network by mistake. MUST match your deCONZ network channel. To let
- * the sensor find any coordinator, set ZB_CHANNEL_MASK to 0x07FFF800UL (channels 11..26). */
-#define ZB_CHANNEL       15
-#define ZB_CHANNEL_MASK  (1UL << ZB_CHANNEL)
+/* --- Zigbee channels ------------------------------------------------------------------ */
+/* Pairing scans ALL Zigbee channels (11-26), so the sensor joins any coordinator (deCONZ,
+ * Zigbee2MQTT, ZHA, ...) without a reflash. It only joins a network that has Permit Join open,
+ * and after the first join the stack stores the channel, so rejoins go straight to it. To pin
+ * one channel instead, use (1UL << <channel>). */
+#define ZB_CHANNEL_MASK  0x07FFF800UL   /* channels 11..26 */
 
 /* --- Link loss -------------------------------------------------------------------------- */
 /* ed_timeout in ESP_ZIGBEE_ZED_CONFIG() below (4 min) is, on an end device, how long keep-alive polls may keep failing
