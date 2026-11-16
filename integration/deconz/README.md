@@ -68,8 +68,10 @@ reflash.
    GUI: **Edit, Permit Join**.
 2. **Power the sensor** (insert the cell, or press **RST**). An unpaired sensor opens a
    **3 minute pairing window**: the LED **blinks blue**.
-3. When it joins, the LED is **green for 2 s**. deCONZ binds it with the DDF (identifiers
-   already match).
+3. When it joins, the LED **keeps blinking blue for another 3 minutes** while deCONZ reads
+   and binds it with the DDF (identifiers already match). The sensor polls every 250 ms and
+   stays awake during this time. Then the LED is **green for 2 s**. Keep the sensor powered
+   until it is green.
 4. If no open network is found within 3 minutes, the LED is **red for 2 s** and the sensor
    stops scanning to save the battery. **Short press** the button (or press RST) to try again.
 
@@ -100,7 +102,7 @@ short press for about 1 s.
 
 | LED | Meaning |
 |---|---|
-| Blue blink | Pairing window open, searching |
+| Blue blink | Pairing window open (searching), or joined and being set up by deCONZ |
 | Green 2 s | Joined / reconnected |
 | Red 2 s | Pairing window ended without a network |
 | Fast red blink | Long press reached: release to factory reset |

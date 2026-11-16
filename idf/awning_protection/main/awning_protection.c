@@ -6,6 +6,8 @@
  *      long-poll keeps running in light sleep, the coordinator never ages us out and the
  *      parent link never drops — so reports land instantly and there is NO rejoin race and
  *      NO settle/motion-hold window (all of which only existed to survive deep-sleep rejoin).
+ *      Exception: after a FRESH join, an INTERVIEW_S window of fast polling lets deCONZ
+ *      finish setting the sensor up (see interview_start()).
  *   3. Measure battery (Power Config cluster, reused ADC driver).
  *   4. Report ONE occupancy value ("awning protected") on the Occupancy Sensing cluster,
  *      on motion (INT1 GPIO wake) AND on a periodic heartbeat.
@@ -469,11 +471,62 @@ static void pairing_retry_or_close(uint8_t status)
     ESP_LOGW(TAG, "Pairing window closed without a network. Press the button (or RST) to retry.");
 }
 
+/* ------------------------------------------------------------------------------------- */
+/* Interview window after a fresh join (see INTERVIEW_S in awning_config.h): fast polling + */
+/* no light sleep, so deCONZ's descriptor reads, binds and report config get answered fast. */
+/* ------------------------------------------------------------------------------------- */
+static esp_timer_handle_t s_interview_timer;
+static bool s_interviewing = false;           /* [stack] */
+#ifdef CONFIG_PM_ENABLE
+static esp_pm_lock_handle_t s_interview_pm_lock;
+#endif
+
+/* [stack] */
+static void interview_end_stack(void *ctx)
+{
+    if (!s_interviewing) return;
+    s_interviewing = false;
+    ezb_nwk_set_keepalive_interval(ZED_KEEP_ALIVE_MS);
+#ifdef CONFIG_PM_ENABLE
+    if (s_interview_pm_lock) esp_pm_lock_release(s_interview_pm_lock);
+#endif
+    if (s_joined) ui_led(UI_LED_JOINED, LED_JOINED_MS);
+    ESP_LOGI(TAG, "Interview window over: back to %d ms polling + light sleep", ZED_KEEP_ALIVE_MS);
+}
+
+static void interview_timer_cb(void *arg)
+{
+    /* esp_timer context: the stack API must run in the Zigbee task. */
+    esp_zigbee_task_queue_post(interview_end_stack, NULL);
+}
+
+/* [stack] */
+static void interview_start(void)
+{
+    if (!s_interview_timer) {
+        const esp_timer_create_args_t a = { .callback = interview_timer_cb, .name = "interview" };
+        if (esp_timer_create(&a, &s_interview_timer) != ESP_OK) return;
+    }
+#ifdef CONFIG_PM_ENABLE
+    if (!s_interview_pm_lock) {
+        esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "interview", &s_interview_pm_lock);
+    }
+    if (!s_interviewing && s_interview_pm_lock) esp_pm_lock_acquire(s_interview_pm_lock);
+#endif
+    s_interviewing = true;
+    ezb_nwk_set_keepalive_interval(INTERVIEW_POLL_MS);
+    ui_led(UI_LED_PAIRING, 0);
+    esp_timer_stop(s_interview_timer);
+    esp_timer_start_once(s_interview_timer, (uint64_t)INTERVIEW_S * 1000000ULL);
+    ESP_LOGI(TAG, "Interview window: polling every %d ms for %ds so deCONZ can set the sensor up",
+             INTERVIEW_POLL_MS, INTERVIEW_S);
+}
+
 /* [stack] Short press. */
 static void short_press_stack(void *ctx)
 {
     if (s_joined) {
-        ui_led(UI_LED_ACK, LED_ACK_MS);
+        if (!s_interviewing) ui_led(UI_LED_ACK, LED_ACK_MS); /* keep the blue blink while interviewing */
         report_now(); /* fresh occupancy + battery: handy to check the link from the coordinator */
     } else if (ezb_bdb_is_factory_new()) {
         if (s_pair_open) {
@@ -686,10 +739,11 @@ static bool app_signal_handler(const ezb_app_signal_t *app_signal)
             s_rejoin_backoff_s = REJOIN_BACKOFF_MIN_S;
             s_pair_open = false;
             s_joined = true;
-            ui_led(UI_LED_JOINED, LED_JOINED_MS);
-            /* FRESH JOIN: report right away so deCONZ instantiates a value. No settle window is
-             * needed — in light sleep the link stays up, so deCONZ's descriptor read + bind +
-             * report-config all land against a reachable device on its own schedule. */
+            /* FRESH JOIN: poll fast and stay awake for INTERVIEW_S so deCONZ can finish its
+             * descriptor reads, binds and report config (at the normal 4 s poll it can time out
+             * and leave the sensor half set up). LED stays blue, then green. Report right away
+             * so deCONZ instantiates a value. */
+            interview_start();
             report_now();
         } else {
             pairing_retry_or_close(status);

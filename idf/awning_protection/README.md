@@ -15,8 +15,10 @@ so the parent link never drops.
 ## Pairing, reset and status LED
 
 - **Unpaired sensor:** power it up (or press RST) with Permit Join open on the coordinator. It
-  searches all Zigbee channels for 3 minutes (LED blinks blue), green on success, red if the
-  window ends. Short press the user button to search again.
+  searches all Zigbee channels for 3 minutes (LED blinks blue), red if the window ends. Short
+  press the user button to search again. After it joins, the LED keeps blinking blue for
+  another 3 minutes while deCONZ sets the sensor up (the sensor polls fast and stays awake),
+  then turns green. Leave Permit Join open and the sensor powered until it is green.
 - **Factory reset / move to another coordinator:** hold the user button (IO25) for 5 s until
   the LED blinks red fast, then release.
 - Full button and LED reference: [`../../integration/deconz/README.md`](../../integration/deconz/README.md#joining--pairing).

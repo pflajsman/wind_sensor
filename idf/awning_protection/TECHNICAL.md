@@ -148,7 +148,12 @@ rejoins go straight to it.
   - init failed but not factory-new → retry `INITIALIZATION` with backoff 3 → 60 s (coordinator
     down; a short button press retries immediately);
   - factory-new + failed → pairing window (steering scheduled, not inline).
-- `STEERING` success → close window, `s_joined = true`, LED green, baseline report.
+- `STEERING` success → close window, `s_joined = true`, baseline report, and the
+  **interview window** (`interview_start`): keepalive (poll) `INTERVIEW_POLL_MS` (250 ms)
+  instead of `ZED_KEEP_ALIVE_MS` (4 s) plus a `NO_LIGHT_SLEEP` PM lock for `INTERVIEW_S`
+  (180 s), LED blue. deCONZ's descriptor reads, binds and report config otherwise each wait
+  up to 4 s at the parent and the interview can time out half done. Then poll 4 s, light
+  sleep, LED green. Rejoins of a paired sensor skip this.
   Failure → retry every `PAIR_RETRY_S` (3 s) **until the deadline**, then LED red and stop.
   An unpaired sensor no longer scans forever.
 - `EZB_ZDO_SIGNAL_LEAVE`:

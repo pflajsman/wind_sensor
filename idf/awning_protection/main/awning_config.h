@@ -34,8 +34,19 @@
 #define PAIR_WINDOW_S        180   /* how long the sensor searches for a network */
 #define PAIR_RETRY_S           3   /* pause between steering attempts inside the window */
 
+/* Interview window after a FRESH join. deCONZ then reads the node/simple descriptors and basic
+ * attributes, binds the clusters and configures reporting: a few dozen requests. Each one waits
+ * at the parent until our next poll, so at the normal ZED_KEEP_ALIVE_MS (4 s) the interview is
+ * slow enough to time out half done (sensor found, but not set up correctly). For this window the
+ * sensor polls every INTERVIEW_POLL_MS and stays out of light sleep; the LED keeps blinking blue
+ * and turns green when the window ends. Not used on a rejoin of an already paired sensor. */
+#define INTERVIEW_S          180
+#define INTERVIEW_POLL_MS    250
+
 /* --- Zigbee stack config (modeled on the vendor deep_sleep_end_device .h) --------------- */
 #define ESP_ZIGBEE_STORAGE_PARTITION_NAME "zb_storage"
+
+#define ZED_KEEP_ALIVE_MS   4000   /* normal poll interval (ms) to the parent */
 
 #define ESP_ZIGBEE_ZED_CONFIG()                        \
     {                                                  \
@@ -43,7 +54,7 @@
         .install_code_policy = false,                  \
         .zed_config = {                                \
             .ed_timeout = EZB_NWK_ED_TIMEOUT_4MIN,     \
-            .keep_alive = 4000,                        \
+            .keep_alive = ZED_KEEP_ALIVE_MS,           \
         },                                             \
     }
 
@@ -65,7 +76,8 @@
  * ages the device out and the parent link never drops — no rejoin race, reports land
  * instantly. There is therefore NO settle window / motion-hold / early-sleep state machine
  * anymore (all of which only existed to survive the deep-sleep rejoin gap). The stack sleeps
- * and wakes the radio automatically around its poll timer; the app never gates sleep. See the
+ * and wakes the radio automatically around its poll timer; the app only gates sleep for the
+ * LED/button and for the INTERVIEW_S window after a fresh join. See the
  * vendor example esp-zigbee-sdk/examples/sleepy_devices/light_sleep_end_device.
  *
  * NOTE (2.x ezbee SDK): there is no esp_zb_sleep_now()/CAN_SLEEP signal (1.x only; the compat
