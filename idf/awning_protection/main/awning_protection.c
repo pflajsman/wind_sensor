@@ -517,7 +517,7 @@ static void interview_start(void)
 #endif
     s_interviewing = true;
     ezb_nwk_set_keepalive_interval(INTERVIEW_POLL_MS);
-    ui_led(UI_LED_PAIRING, 0);
+    ui_led(UI_LED_SETUP, 0);   /* green blink: joined, deCONZ is setting it up */
     esp_timer_stop(s_interview_timer);
     esp_timer_start_once(s_interview_timer, (uint64_t)INTERVIEW_S * 1000000ULL);
     ESP_LOGI(TAG, "Interview window: polling every %d ms for %ds so deCONZ can set the sensor up",
@@ -528,7 +528,7 @@ static void interview_start(void)
 static void short_press_stack(void *ctx)
 {
     if (s_joined) {
-        if (!s_interviewing) ui_led(UI_LED_ACK, LED_ACK_MS); /* keep the blue blink while interviewing */
+        if (!s_interviewing) ui_led(UI_LED_ACK, LED_ACK_MS); /* keep the green blink while interviewing */
         report_now(); /* fresh occupancy + battery: handy to check the link from the coordinator */
     } else if (ezb_bdb_is_factory_new()) {
         if (s_pair_open) {

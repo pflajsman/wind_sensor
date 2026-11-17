@@ -14,6 +14,7 @@ typedef enum {
     UI_LED_OFF = 0,
     UI_LED_PAIRING,       /* blue blink: pairing window open */
     UI_LED_JOINED,        /* green solid: joined / reconnected */
+    UI_LED_SETUP,         /* green blink: just joined, deCONZ is setting the sensor up */
     UI_LED_ACK,           /* short green flash: short press acknowledged while joined */
     UI_LED_FAILED,        /* red solid: pairing window ran out without a network */
     UI_LED_RESET_ARMED,   /* fast red blink: long press reached, release to factory reset */

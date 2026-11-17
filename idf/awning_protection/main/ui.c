@@ -75,6 +75,7 @@ static uint32_t led_step(ui_led_mode_t mode, uint32_t phase)
     switch (mode) {
     case UI_LED_PAIRING:     led_rgb(0, 0, (phase & 1) ? 0 : L); return (phase & 1) ? 800 : 200;
     case UI_LED_JOINED:      led_rgb(0, L, 0);                   return 1000;
+    case UI_LED_SETUP:       led_rgb(0, (phase & 1) ? 0 : L, 0); return (phase & 1) ? 800 : 200;
     case UI_LED_ACK:         led_rgb(0, L, 0);                   return 1000;
     case UI_LED_FAILED:      led_rgb(L, 0, 0);                   return 1000;
     case UI_LED_RESET_ARMED: led_rgb((phase & 1) ? 0 : L, 0, 0); return 100;
