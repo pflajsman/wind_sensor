@@ -8,24 +8,28 @@ Shopping list and fitting notes for the enclosure (`mount_style = "rail"`, `esp_
 | Qty | Part | Where it goes |
 |---|---|---|
 | 4 | M3 heat-set insert, short (3 to 4 mm long), for a **4.0 mm** hole | Cover end walls |
-| 4 | M3 x **10** mm countersunk screw, DIN 7991 / ISO 10642, hex socket 2 mm, stainless A2 | Plate to cover, from the back |
+| 4 | M3 x **6** mm low cylinder head screw, ISO 14580, TX10, stainless A2 (CNC Kitchen) | Plate to cover, from the back |
 | 2 | M4 countersunk screw (DIN 7991) or rivet, length to suit your awning bar | `awning_base` to the awning |
 | 1 | Outdoor double-sided acrylic foam tape (VHB type) | `awning_base` to the awning |
 | - | CA glue (a few drops) | Button collars |
-| - | TPU 90A filament | `gasket`, `usb_plug` / `usb_hatch` |
+| - | TPU 90A filament | `gasket`, `usb_plug` |
 
 Nothing else needs screws: the ESP32 board clicks into 4 hooks in the plate, the GY-291 is
 held by the printed `adxl_pins`, the cell sits in printed clips.
 
-## Plate to cover: M3 x 10 countersunk
+## Plate to cover: M3 x 6 low cylinder head
 
-- **Length 10 mm.** With DIN 7991 the length includes the head. The plate is 6.5 mm thick, so
-  3.5 mm of thread goes into the insert.
-  - M3 x 8 leaves only 1.5 mm of thread in the insert: too little.
-  - M3 x 12 hits the bottom of the 4.5 mm insert hole before the plate is tight.
-  - M3 x 6 was for the old 3 mm plate. Do not use it with the current plate.
-- **Countersunk head.** The countersinks in the plate back take a 6 to 6.7 mm head, so it ends
-  flush and does not catch on `awning_base` when the box slides on.
+- **Screw:** CNC Kitchen M3 x 6, low cylinder head ISO 14580, TX10, stainless A2-70
+  (head 5.5 mm wide, 2.4 mm high).
+- **Counterbore:** each screw sits in a 6.2 mm counterbore, 3.5 mm deep, in the plate back.
+  That leaves 3.0 mm of plate under the head, and the head ends 1.1 mm below the back face, so
+  it does not catch on `awning_base` when the box slides on.
+- **Length 6 mm.** With ISO 14580 the length does not include the head. 3.0 mm of plate, then
+  3.0 mm into the cover: the whole M3 x 3.0 insert, with 1.5 mm of free hole left behind it.
+  - M3 x 8 would reach 5.0 mm into the 4.5 mm hole and bottom out before the plate is tight.
+  - M3 x 4 would grip only 1 mm of the insert: too little.
+- **Countersunk instead:** `cover_screw_head = "countersunk"` brings back the countersinks for
+  M3 x 10 DIN 7991 (length includes the head).
 - **Stainless A2**, because the box lives outdoors.
 
 ## Heat-set inserts in the cover
@@ -42,8 +46,11 @@ melted into the plastic, so the cover gets a metal thread instead of a thread cu
    M3, ~4 mm long
 ```
 
-**What to buy:** M3 heat-set inserts, short (3 to 4 mm), made for a 4.0 mm hole. Examples:
-Ruthex M3 x 4, CNC Kitchen M3 short. Check the hole size the maker recommends: it must be
+**What to buy:** M3 heat-set inserts, short (3 to 4 mm), made for a 4.0 mm hole. Used on the
+prototype: **CNC Kitchen M3 short, M3 x 3.0** (TC-M3x3.0: 3.0 mm long, 4.6 mm outside, 4.0 mm
+hole, 1.6 mm minimum wall, 100 pcs). Ruthex M3 x 4 also fits. With the 3 mm insert, the
+M3 x 6 screw goes through its whole thread and ends at its far end, with 1.5 mm of free hole
+behind it. Check the hole size the maker recommends: it must be
 4.0 mm (`insert_d` in `enclosure.scad`).
 
 **How to fit them:**
@@ -70,8 +77,8 @@ change the battery.
 
 ## Only for the other variants
 
-- `mount_style = "dovetail"`: 3 more M3 inserts (2 hatch, 1 lock), 4x M3 x 10 cylinder head
-  instead of the countersunk screws, 2x M3 x 8 (hatch), 1x M3 x 10 (lock), 2 stainless hose
+- `mount_style = "dovetail"`: 1 more M3 insert (lock), 4x M3 x 10 cylinder head
+  instead of the countersunk screws, 1x M3 x 10 (lock), 2 stainless hose
   clamps.
 - `adxl_fix = "screws"`: 2x M2.5 x 6 self-tapping (GY-291).
 - `esp_hold = "clips"`: CA glue for the 2 `board_clips`.

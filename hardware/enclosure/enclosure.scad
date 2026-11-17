@@ -13,8 +13,7 @@
 //   cover      front shell: label, 2 sealed button plungers, LED window, USB port, hold-down ribs
 //   plunger        user-button (IO25: pairing / factory reset) pin, finger pocket, 2.5 x 1 mm O-ring
 //   reset_plunger  RST pin, recessed (press with a pen tip), 2.5 x 1 mm O-ring
-//   usb_hatch  screw-on cover for the USB-C port (TPU with a moulded seal bead, or PETG + cord)
-//   usb_plug   TPU push-in stopper for the USB port, no screws (alternative to usb_hatch)
+//   usb_plug   TPU push-in stopper for the USB port, no screws
 //   gasket     TPU 90A seal for the plate groove (replaces the 2 mm cord)
 //   button_pin, reset_button_pin, button_collar  captive buttons: pin with a head in from the
 //              front, collar glued onto its end from inside (alternative to the O-ring plungers)
@@ -22,7 +21,7 @@
 //   usb_clamp  optional saddle on the two USB-C shells, pressed by the cover (not with esp_hold = clips)
 //   awning_base  plate stuck (VHB tape) or screwed to the awning: a dovetail rail the box slides
 //              onto, and a snap latch that clicks into the box side (mount_style = rail)
-//   adxl_pins  snap pins that hold the GY-291 instead of screws (adxl_fix = pins)
+//   adxl_pins  plain press-fit pins that hold the GY-291 instead of screws (adxl_fix = pins)
 //   mount      old dovetail bracket for hose clamps (mount_style = dovetail only)
 //
 // Board data: LaskaKit ESP32-H2-DEVKit V2 (rev 2.0, production v9), taken from the
@@ -32,7 +31,7 @@
 // the plate/cover split is at z = floor_t.
 
 /* [Output] */
-part = "assembly"; // [assembly, print_plate, plate, cover, plunger, reset_plunger, usb_hatch, usb_plug, gasket, board_clips, usb_clamp, button_pin, reset_button_pin, button_collar, awning_base, adxl_pins, mount]
+part = "assembly"; // [assembly, print_plate, plate, cover, plunger, reset_plunger, usb_plug, gasket, board_clips, usb_clamp, button_pin, reset_button_pin, button_collar, awning_base, adxl_pins, mount]
 
 /* [USB access] */
 usb_ports = "uart"; // [uart, native, both]
@@ -98,10 +97,11 @@ clip_lip_x = [57.7, 60.1];
 esp_hold = "hooks";       // [hooks, clips]
 // 2nd pair: mid-board (away from the wiring at the battery end), between the side fences, its
 // beak in the 0.89 mm gap between header pads 38.885 and 41.425 (pad octagons 1.65 mm; drill file)
-hook_x = [[5.6, 9.0], [38.4, 41.9]];     // arm span along the board edge (board-local x)
+hook_x = [[4.0, 10.5], [37.0, 43.5]];    // arm span along the board edge (board-local x); wide = strong
 hook_lip_x = [[7.6, 9.0], [39.855, 40.455]]; // beak only where the edge is free
-hook_t = 1.2;             // arm thickness (flex direction)
-hook_lip = 0.5;           // beak over the board edge
+hook_t = 1.4;             // arm thickness (flex direction); 1.2 cracked
+hook_lip = 0.7;           // beak over the board edge; 0.5 held too little
+hook_lip_h = 0.7;         // straight part of the beak face before the lead-in slope
 hook_root = -2;           // box z where the arm starts (bottom of its moat)
 hook_moat = 0.4;          // moat clearance around the arm
 usb_bridge = esp_hold == "clips"; // rigid bridge of the plate over the USB-C shells
@@ -119,10 +119,12 @@ usb_clamp_press = 0.3;   // clamp taller than the gap to the cover front = press
 // the ADXL and battery wires stay low and cannot creep between the board and the cover. Wires
 // press in through a slot at the top (or thread through). Then route them under the ESP board.
 cable_guides = true;
-cable_ch = [4.5, 2.5];   // channel width x height (plus a 45 deg roof up to the slot)
-cable_slot = 1.2;        // entry slot at the top; the two halves flex apart a little
-cable_guide_l = 3;       // length along the cable
-cable_guide_x = [5, 36.6, 67]; // from the battery holder start: clear of the end walls and clips
+cable_ch = [4.8, 2.6];   // channel width x height (plus a 45 deg roof up to the slot)
+cable_slot = 1.8;        // entry slot at the top: wide enough that the halves hardly flex (1.2 cracked)
+cable_w = 1.5;           // leg / roof thickness (was 1.2)
+cable_guide_l = 5;       // length along the cable (was 3)
+cable_guide_x = [4, 36, 65.5]; // from the battery holder start: clear of the end walls and clips
+cable_cell_clr = 0.4;    // the guides are trimmed to stay this far under the cell
 
 /* [TPU seals] */
 
@@ -133,13 +135,9 @@ gasket_base_w = 1.8;   // groove is 2.0
 gasket_base_h = 0.8;
 gasket_ridge_w = 0.9;  // 2 extrusion lines
 gasket_squeeze = 0.5;  // ridge above the plate face = compression. Lower it if the cover is hard to close
-// usb_hatch: "bead" = print the hatch in TPU, a bead on its inner face goes into the cover's
-// port groove (no cord). "cord" = the original flat hatch (PETG) with 2 mm cord in the groove.
-hatch_seal = "bead";   // [bead, cord]
-hatch_bead_w = 1.2;    // groove is 2.0
-hatch_squeeze = 0.3;   // bead longer than the groove depth = compression
-// usb_plug: TPU stopper pushed into the cover's USB tunnel, held by barbed ribs, plus the same
-// seal bead in the port groove. The cap stays within the flat end face of the box.
+// usb_plug: TPU stopper pushed into the cover's USB tunnel, held by barbed ribs, plus a
+// seal bead in the port groove.
+plug_bead_w = 1.2;     // groove is 2.0 The cap stays within the flat end face of the box.
 plug_stem_l = 5.5;     // into the 8.5 mm tunnel; the USB-C socket is at its far end
 plug_clr = 0.2;        // stem body to tunnel wall, per side
 plug_rib_int = 0.3;    // rib interference with the tunnel, per side. Higher = tighter
@@ -152,7 +150,7 @@ adxl_dep = 15.7;        // header edge to hole edge (lies along the box, X)
 adxl_hole_spacing = 15; // MEASURE: centre distance of the 2 mounting holes
 adxl_hole_inset = 2.5;  // MEASURE: hole centre to the board edge opposite the header
 adxl_standoff = 3;
-// pins  = snap pins through the GY-291 holes into the standoffs (adxl_pins, printed lying down)
+// pins  = press-fit pins through the GY-291 holes into the standoffs (adxl_pins, printed head down)
 // screws = 2 x M2.5 self-tapping screws into the standoffs
 adxl_fix = "pins";      // [pins, screws]
 adxl_hole_d = 3.0;      // MEASURE: GY-291 mounting hole diameter
@@ -165,17 +163,26 @@ bat_l = 70;        // ~65 bare cell, up to ~70 for a protected cell; 66 saves 4 
 
 /* [Shell] */
 wall = 3.2;        // side walls (gasket groove sits under them)
-end_wall = 8.5;    // end walls hold the 4 cover screws and the hatch inserts
+end_wall = 8.5;    // end walls hold the 4 cover screws and the USB plug tunnel
 floor_t = 3;       // plate thickness above the sled
 front_t = 3;       // cover front face
+cover_bevel = 1.5; // 45 degree chamfer on the cover's upper (front) outer edges; 0 = sharp
 margin = 1;        // ADXL to the -X wall
 gap_sensor = 3;    // ADXL header to battery holder
 gap_antenna = 6;   // battery holder to the ESP32 antenna edge (stop blocks sit in this gap)
+stop_t = 3.0;      // antenna-end stop blocks: thickness at the top (was 2.0)
+stop_t_base = 4.5; // ... and at the floor (buttress toward the battery)
 inner_y = 30.4;    // 25.4 board + side fences + room for the snap hooks to flex
 gasket_w = 2.0;    // groove for 2 mm silicone / EPDM cord
 gasket_depth = 1.5;
 insert_d = 4.0;    // M3 heat-set insert hole (2.6 for M3 self-tapping)
-insert_len = 4.5;  // short M3 x 4 inserts (cover screws must stay under the USB tunnel)
+insert_len = 4.5;  // short M3 x 3 / x 4 inserts (cover screws must stay under the USB tunnel)
+// cover screw heads in the plate back (rail mount):
+//   cylinder    = low cylinder head ISO 14580 (CNC Kitchen M3 x 6, head 5.5 x 2.4) in a counterbore
+//   countersunk = DIN 7991 M3 x 10, flush in a countersink
+cover_screw_head = "cylinder"; // [cylinder, countersunk]
+cbore_d = 6.2;     // counterbore for the 5.5 mm head
+cbore_depth = 3.5; // from the back face: leaves 3.0 mm under the head, so M3 x 6 reaches 3.0 mm into the cover
 pilot_m25 = 2.1;   // M2.5 self-tapping pilot
 press = 0.3;       // interference of the cover ribs on the ESP32 board
 
@@ -257,7 +264,6 @@ port_yc = yc - (usb_sel[0] + usb_sel[len(usb_sel) - 1]) / 2; // box Y of the por
 port_w = usb_plug_w + abs(usb_sel[0] - usb_sel[len(usb_sel) - 1]);
 port_z = esp_z0 + usb_zc;
 port_seal = 2;                                  // groove offset from the port opening
-hatch_z = [-sled_h / 2, port_z + usb_plug_h / 2 + port_seal + gasket_w + 3]; // hatch screws
 
 function esp(p) = [esp_x0 - p[0], yc - p[1]]; // board local -> box XY
 
@@ -281,7 +287,7 @@ led_wall = 1.2;
 cover_screws = [for (x = [-end_wall + 4, inner_x + end_wall - 4], y = [3, inner_y - 3]) [x, y]];
 
 echo(str("Outer size: ", inner_x + 2 * end_wall, " x ", inner_y + 2 * wall, " x ",
-         back_h + top_z, " mm (+3 mm USB hatch)", mount_style == "rail" ? str(", ", back_h + top_z + base_t, " mm with awning_base") : ""));
+         back_h + top_z, " mm (+2.5 mm USB plug cap)", mount_style == "rail" ? str(", ", back_h + top_z + base_t, " mm with awning_base") : ""));
 // LED channel must not cut into the RST plunger bore (r 2.15) or its pocket
 assert(norm(led_win - esp(reset_xy)) - led_window_d / 2 - 2.15 >= 1.0, "LED window too close to the RST bore");
 assert(norm(led_bot - esp(reset_xy)) - led_bot_d / 2 - 2.15 >= 1.0, "LED channel bottom too close to the RST bore");
@@ -290,8 +296,8 @@ assert(port_z - usb_plug_h / 2 - port_seal - gasket_w > floor_t + 0.5, "USB seal
 // TPU does not compress in volume: once squeezed, a seal must still fit in its groove
 gasket_ridge_h = gasket_depth + gasket_squeeze - gasket_base_h;
 gasket_fill = (gasket_base_w * gasket_base_h + gasket_ridge_w * gasket_ridge_h) / (gasket_w * gasket_depth);
-bead_fill = hatch_bead_w * (gasket_depth + hatch_squeeze) / (gasket_w * gasket_depth);
-echo(str("TPU gasket groove fill ", round(gasket_fill * 100), " %, hatch bead fill ", round(bead_fill * 100), " %"));
+bead_fill = plug_bead_w * (gasket_depth + plug_squeeze) / (gasket_w * gasket_depth);
+echo(str("TPU gasket groove fill ", round(gasket_fill * 100), " %, USB plug bead fill ", round(bead_fill * 100), " %"));
 assert(gasket_fill <= 0.9 && bead_fill <= 0.9, "TPU seal overfills its groove when squeezed");
 assert(gasket_base_w < gasket_w && gasket_ridge_w <= gasket_base_w && gasket_ridge_h > 0, "TPU gasket profile");
 
@@ -342,36 +348,30 @@ module dove_taper(x0, x1, w0, w1, h, clr) {
 
 // ======================================================================= plate internals
 
-// ADXL snap pin, axis z, head on top, z = 0 at the underside of the head (top of the GY-291).
-// The two prongs flex in x; the flats (|y| <= pin_flat) are the faces it is printed on.
-apin_d = adxl_hole_d - 0.2;          // shaft
+// ADXL pin holes in the plate (sized for the old split snap pin; kept so printed plates still fit).
+apin_d = adxl_hole_d - 0.2;          // old snap-pin shaft, sets the hole below
 apin_neck = apin_d + 0.1;            // hole through the standoff
 apin_neck_l = 1.2;                   // hole length in the floor below the standoff
 apin_barb = apin_neck + 0.7;         // barb width (squeezes 0.35 per side through the neck)
-apin_flat = 1.2;
 apin_grip = adxl_pcb_t + adxl_standoff + apin_neck_l; // head to the chamber ceiling
 apin_cham = [apin_barb + 0.8, 2.6];  // hidden chamber under the neck (d, h)
-module adxl_pin() {
-    g = apin_grip; nb = apin_neck; b = apin_barb;
-    intersection() {
-        difference() {
-            union() {
-                translate([0, 0, 0]) cylinder(d = 6, h = 1.0);                     // head
-                translate([0, 0, -g + 0.1]) cylinder(d = apin_d, h = g + 0.11);    // shaft
-                // barbs: 45 deg shoulder from the neck width (0.1 above the ceiling = preload),
-                // straight, then a lead-in taper to the tip
-                rotate_extrude() polygon([[0, -g + 0.1], [nb / 2, -g + 0.1], [b / 2, -g - (b - nb) / 2 + 0.1],
-                                           [b / 2, -g - 0.6], [apin_d / 2 - 0.4, -g - 2.0], [0, -g - 2.0]]);
-            }
-            // split: the two prongs squeeze together through the PCB hole and the neck
-            translate([-0.5, -5, -g - 2.1]) cube([1.0, 10, 6.2]);
-            translate([0, 5, -g - 2.1 + 6.2]) rotate([90, 0, 0]) cylinder(d = 1.0, h = 10);
-        }
-        translate([-5, -apin_flat, -20]) cube([10, 2 * apin_flat, 30]);
+// Plain press-fit pin (no split): solid round shaft through the GY-291 hole into the 2.9 mm
+// standoff hole. FDM prints the vertical hole a little undersize, so the shaft is a light press
+// fit and the head clamps the board onto the standoff. The tip stops 0.2 mm above the bottom of
+// the hole so the head always seats on the board. The plate holes above are unchanged.
+adxl_pin_test_d = 2.9;               // shaft for part = adxl_pins_test (test set export)
+apin_shaft_d = 2.9;                  // MEASURE/TUNE: 2.8 if it will not go in, 3.0 if it falls out
+apin_len = adxl_pcb_t + adxl_standoff + apin_neck_l - 0.2;   // head underside to tip
+apin_head = [6, 1.2];                // head (d, h)
+module adxl_pin(d = apin_shaft_d) {   // head down, shaft up (print orientation)
+    cylinder(d = apin_head[0], h = apin_head[1]);
+    translate([0, 0, apin_head[1] - 0.01]) {
+        cylinder(d = d, h = apin_len - 0.4 + 0.01);
+        translate([0, 0, apin_len - 0.4]) cylinder(d1 = d, d2 = d - 0.8, h = 0.4);   // lead-in chamfer
     }
 }
-module adxl_pins_print() {   // lying on a flat, 4 pins (2 + 2 spares)
-    for (i = [0 : 3]) translate([i * 8, 0, apin_flat]) rotate([90, 0, 0]) adxl_pin();
+module adxl_pins_print(d = apin_shaft_d) {   // standing head down, 4 pins (2 + 2 spares)
+    for (i = [0 : 3]) translate([i * 8, 0, 0]) adxl_pin(d);
 }
 assert(apin_cham[1] >= 2.0 + 0.4, "ADXL pin chamber too short for the barbs");
 assert(adxl_fix != "pins" || mount_style != "rail" || -end_wall + rail_stop > x_s0 + adxl_hole_inset + apin_cham[0] / 2 + 1,
@@ -458,26 +458,34 @@ module esp_mount() {
     }
     // fixed bridge over the two USB-C shells, on 2 posts beside the board edges
     if (usb_bridge) translate([esp_x0, yc, 0]) rotate([0, 0, 180]) usb_bridge_local();
-    // stop blocks beyond the antenna edge (outside the module's |y| < 6.6)
+    // stop blocks beyond the antenna edge (outside the module's |y| < 6.6). 0.1 mm from the
+    // antenna edge: locates the board in X for the beaks. stop_t thick at the top, buttressed
+    // to stop_t_base at the floor toward the battery (2 mm blocks cracked at the root).
     for (s = [-1, 1]) {
-        a = esp([pcb_l + 2.1, 0]);   // 0.1 mm from the antenna edge: locates the board in X for the beaks
-        translate([a[0], s > 0 ? yc + 8 : yc - pcb_w / 2, floor_t - 0.01])
-            cube([2, pcb_w / 2 - 8, top + 1 - floor_t]);
+        a = esp([pcb_l + 0.1, 0]);
+        translate([a[0], s > 0 ? yc + 8 : yc - pcb_w / 2, floor_t - 0.01]) hull() {
+            translate([-stop_t, 0, 0]) cube([stop_t, pcb_w / 2 - 8, top + 1 - floor_t]);
+            translate([-stop_t_base, 0, 0]) cube([stop_t_base, pcb_w / 2 - 8, 1]);
+        }
     }
 }
 
 // ---- cable guides. Profile in (u, z): u = inward from the side wall (0.3 mm gap), z = above floor.
 module cable_guide_profile() {
-    w = 1.2;                                      // leg / roof thickness
+    w = cable_w;                                  // leg / roof thickness
     r = (cable_ch[0] - cable_slot) / 2;           // 45 deg roof run from each leg to the slot
     top = cable_ch[1] + r + 0.85;
     for (m = [0, 1]) translate([m * (cable_ch[0] + 2 * w), 0]) mirror([m, 0])
         polygon([[0, 0], [w, 0], [w, cable_ch[1]], [w + r, cable_ch[1] + r], [w + r, top], [0, top]]);
 }
 module cable_guides_all() {
-    for (x = cable_guide_x, s = [-1, 1])
-        multmatrix([[1, 0, 0, x_b0 + x], [0, -s, 0, s > 0 ? inner_y - 0.3 : 0.3], [0, 0, 1, floor_t - 0.01], [0, 0, 0, 1]])
-            rotate([90, 0, 90]) linear_extrude(cable_guide_l) cable_guide_profile();
+    difference() {
+        for (x = cable_guide_x, s = [-1, 1])
+            multmatrix([[1, 0, 0, x_b0 + x], [0, -s, 0, s > 0 ? inner_y - 0.3 : 0.3], [0, 0, 1, floor_t - 0.01], [0, 0, 0, 1]])
+                rotate([90, 0, 90]) linear_extrude(cable_guide_l) cable_guide_profile();
+        // keep clear of the cell lying above the lanes
+        translate([x_b0 - 1, yc, bat_zc]) rotate([0, 90, 0]) cylinder(d = bat_d + 2 * cable_cell_clr, h = bat_l + 10);
+    }
 }
 
 // ---- board clips. Profile in (u, z): u = outward from the PCB edge, z = above the plate floor.
@@ -517,12 +525,12 @@ assert(floor_t + sled_h + clip_bot >= 1, "clip pocket leaves less than 1 mm of f
 
 // ---- moulded snap hooks. Profile in (u, z): u = outward from the PCB edge, z = box z.
 hook_zt = floor_t + clip_zt;                     // beak underside, 0.15 mm above the PCB top
-hook_top = hook_zt + 2.0;
+hook_top = hook_zt + 2.4;
 hook_len = hook_zt - hook_root;                  // flexing length
 hook_strain = 3 * hook_t * (hook_lip + 0.2) / (2 * hook_len * hook_len);
 module hook_profile(lip = true) {
     if (lip) polygon([[0.2, hook_root], [0.2 + hook_t, hook_root], [0.2 + hook_t, hook_top],
-                      [-hook_lip, hook_zt + 0.4], [-hook_lip, hook_zt], [0.2, hook_zt]]);
+                      [-hook_lip, hook_zt + hook_lip_h], [-hook_lip, hook_zt], [0.2, hook_zt]]);
     else polygon([[0.2, hook_root], [0.2 + hook_t, hook_root], [0.2 + hook_t, hook_top], [0.2, hook_top - 1.2]]);
 }
 // board-local x, u, box z -> box frame (u outward on side s)
@@ -537,6 +545,13 @@ module hook_moats() for (i = [0, 1], s = [-1, 1]) hook_place(s)
 echo(str("ESP32 hooks: ", round(hook_len * 10) / 10, " mm arm, bending strain ", round(hook_strain * 1000) / 10, " %"));
 assert(esp_hold != "hooks" || hook_root - (-back_h) >= 1.5, "hook moat leaves less than 1.5 mm under it");
 assert(esp_hold != "hooks" || 0.2 + hook_t + hook_lip + 0.2 <= (inner_y - pcb_w) / 2, "hook cannot open: too close to the cavity wall");
+// screw tip in the cover = what passes the split line; must stay inside the insert hole
+cover_screw_l = cover_screw_head == "cylinder" ? 6 : 10;   // ISO 14580 length excludes the head; DIN 7991 includes it
+cover_screw_in = cover_screw_l - (cover_screw_head == "cylinder" ? back_h + floor_t - cbore_depth : back_h + floor_t);
+echo(str("Cover screw M3 x ", cover_screw_l, ": ", cover_screw_in, " mm into the cover (insert hole ", insert_len, " mm)"));
+assert(mount_style != "rail" || (cover_screw_in >= 2.5 && cover_screw_in <= insert_len - 0.5), "cover screw length does not suit the insert hole");
+assert(stop_t_base + 0.1 <= gap_antenna - 1, "antenna stop blocks reach the battery holder");
+assert(cable_guide_x[0] >= bat_end_t + 0.5 && cable_guide_x[2] + cable_guide_l <= bat_l + bat_end_t - 0.5, "cable guides hit the battery end walls");
 
 // ---- rail mount. Dovetail profile in the YZ plane: width wn at z = 0, widening upward.
 module rail2d(wn, h, clr) {
@@ -608,6 +623,7 @@ assert(3 * latch_t * (latch_tooth + 0.1) / (2 * latch_len * latch_len) < 0.015, 
 assert(seg_a[0] + 0.1 + rail_travel >= seg_a[1] && seg_a[1] + rail_travel <= seg_a[1] + rail_open_l
        && seg_b[0] + 0.1 > seg_b[1] - rail_travel, "rail segments: drop-in does not work");
 assert(rail_neck / 2 + rail_clr < yc - 3 - 4.2 - 1 && rail_flare <= 45
+       && (cover_screw_head != "cylinder" || rail_neck / 2 + rail_h * tan(rail_flare) + rail_clr < yc - 3 - cbore_d / 2 - 1)
        && rail_neck / 2 + rail_h * tan(rail_flare) + rail_clr < yc - 3 - 1.7 - 1, "rail channel hits the cover screws");
 
 // ======================================================================= parts
@@ -628,13 +644,13 @@ module plate() {
                 dt_h + 0.01, dt_clr);
             // lock-screw insert in the sled end face
             translate([-end_wall - 0.01, yc, lock_z]) rotate([0, 90, 0]) cylinder(d = insert_d, h = 5);
-            // lower USB-hatch screw insert in the sled end face
-            translate([inner_x + end_wall - 6, port_yc, hatch_z[0]]) rotate([0, 90, 0]) cylinder(d = insert_d, h = 7);
         } else {
-            // cover screws from the back: countersunk M3 (DIN 7991), flush with the back
+            // cover screws from the back: low cylinder heads in counterbores, or countersunk
+            // M3 (DIN 7991) flush with the back
             for (s = cover_screws) translate([s[0], s[1], -back_h - 1]) {
                 cylinder(d = 3.4, h = back_h + floor_t + 2);
-                cylinder(d1 = 6.4 + 2 * 1, d2 = 3.4, h = 1.5 + 1);
+                if (cover_screw_head == "cylinder") cylinder(d = cbore_d, h = cbore_depth + 1);
+                else cylinder(d1 = 6.4 + 2 * 1, d2 = 3.4, h = 1.5 + 1);
             }
             rail_channel();
             latch_notch();
@@ -661,13 +677,23 @@ module led_channel(d_top, d_bot, skin) {
     }
 }
 
+// Outer cover block, from the split line to the front, with the front outer edges chamfered.
+module cover_shell() {
+    b = cover_bevel;
+    if (b <= 0) translate([0, 0, floor_t]) linear_extrude(top_z - floor_t) outline2d();
+    else hull() {
+        translate([0, 0, floor_t]) linear_extrude(top_z - floor_t - b) outline2d();
+        translate([0, 0, top_z - 0.01]) linear_extrude(0.01) offset(delta = -b) outline2d();
+    }
+}
+
 // Modelled in box coordinates (front up); printed front face down, see cover_print().
 module cover() {
     boss_len = front_z - boss_bot;
     difference() {
         union() {
             difference() {
-                translate([0, 0, floor_t]) linear_extrude(top_z - floor_t) outline2d();
+                cover_shell();
                 translate([0, 0, floor_t - 1]) linear_extrude(front_z - floor_t + 1) cavity2d();
             }
             for (b = buttons) {
@@ -685,12 +711,11 @@ module cover() {
         }
         // cover screw inserts (from the open back side)
         for (s = cover_screws) translate([s[0], s[1], floor_t - 0.01]) cylinder(d = insert_d, h = insert_len);
-        // USB port tunnel, its gasket groove and the upper hatch insert
+        // USB port tunnel and the groove for the plug's seal bead
         translate([inner_x - 1, port_yc, port_z]) rotate([90, 0, 90])
             linear_extrude(end_wall + 2) rrect(port_w, usb_plug_h, 2);
         translate([inner_x + end_wall - gasket_depth, port_yc, port_z]) rotate([90, 0, 90])
             linear_extrude(gasket_depth + 1) port_ring2d(gasket_w);
-        translate([inner_x + end_wall - 6, port_yc, hatch_z[1]]) rotate([0, 90, 0]) cylinder(d = insert_d, h = 7);
         // plunger bores, pockets, O-ring entry chamfers
         for (b = buttons) {
             p = esp(b[0]);
@@ -768,35 +793,14 @@ module button_collar() {
 for (b = buttons) assert(pin_head_bot(b) + plunger_bot + pin_head_t <= top_z, "button head sticks out of its pocket");
 assert(pin_reach >= 0 && pin_reach < 0.4 + pin_travel, "pin_reach: the pin would press the switch at rest beyond its travel");
 
-// USB hatch, printed flat (outer face on the bed). Local Y = box Y, local X = box Z.
-module usb_hatch() {
-    if (sled_h == 0) echo("WARNING: usb_hatch needs its lower screw in the dovetail sled; with mount_style = rail use usb_plug");
-    z0 = -sled_h;
-    z1 = hatch_z[1] + 3.5;
-    w = port_w + 2 * (port_seal + gasket_w) + 4;
-    difference() {
-        union() {
-            translate([z0, -w / 2, 0]) linear_extrude(3) translate([0, 0]) offset(r = 2) offset(delta = -2) square([z1 - z0, w]);
-            translate([z0 - 4, -4, 0]) cube([6, 8, 1.6]);               // pull tab
-            // TPU: seal bead on the inner face, into the cover's port groove
-            if (hatch_seal == "bead") translate([port_z, 0, 3 - 0.01]) mirror([1, 1, 0])
-                linear_extrude(gasket_depth + hatch_squeeze + 0.01) port_ring2d(hatch_bead_w);
-        }
-        for (z = hatch_z) translate([z, 0, 0]) {
-            translate([0, 0, -1]) cylinder(d = 3.4, h = 5);
-            translate([0, 0, -0.01]) cylinder(d = 6.2, h = 1.6);
-        }
-    }
-}
-
-// TPU push-in USB plug, printed cap down (outer face on the bed), stem up. Same frame as
-// usb_hatch: local X = box Z, local Y = box Y - port_yc, local Z = depth toward the box.
+// TPU push-in USB plug, printed cap down (outer face on the bed), stem up.
+// Local X = box Z, local Y = box Y - port_yc, local Z = depth toward the box.
 module usb_plug() {
     cap_t = 2.5;
     c = port_seal + gasket_w / 2;
     // cap: 3 mm past the groove top and bottom; across (Y) only as wide as the flat part of the
     // end face (the corners are rounded), but always covering the seal bead
-    bead_half = (port_w + 2 * c + hatch_bead_w) / 2;
+    bead_half = (port_w + 2 * c + plug_bead_w) / 2;
     cap_half_y = max(port_yc - (-wall + 2) + 0.2, bead_half + 0.15);
     cap = [usb_plug_h + 2 * c + gasket_w + 6, 2 * cap_half_y];
     body = [usb_plug_h - 2 * plug_clr, port_w - 2 * plug_clr];
@@ -815,7 +819,7 @@ module usb_plug() {
                 linear_extrude(cap_t) rr(cap, 3.5);
                 // seal bead into the cover's port groove
                 translate([0, 0, cap_t - 0.01]) mirror([1, 1, 0])
-                    linear_extrude(gasket_depth + plug_squeeze + 0.01) port_ring2d(hatch_bead_w);
+                    linear_extrude(gasket_depth + plug_squeeze + 0.01) port_ring2d(plug_bead_w);
                 // stem with 2 barbed ribs
                 translate([0, 0, cap_t - 0.01]) linear_extrude(plug_stem_l + 0.01) rr(body, r_body);
                 for (z = [cap_t + 1.2, cap_t + 3.2]) barb(z);
@@ -909,11 +913,12 @@ module assembly() {
     color("black") translate([0, 0, floor_t - gasket_depth + 12]) gasket();
     if (!usb_bridge) color("orange") translate([0, 0, 12]) usb_clamp();
     if (esp_hold == "clips") color("orange") for (s = [-1, 1]) translate([0, 0, 6]) board_clip(s);
-    color("tomato") translate([inner_x + end_wall + 12, port_yc, 0]) rotate([0, -90, 0]) usb_hatch();
+    color("tomato") translate([inner_x + end_wall + 12, port_yc, 0]) rotate([0, -90, 0]) usb_plug();
     if (sled_h > 0) color("dimgray") translate([-end_wall, yc, -sled_h - 15]) mount();
     else color("dimgray") translate([0, 0, -15]) awning_base();
     if (adxl_fix == "pins") for (dy = [-1, 1]) color("orange")
-        translate([x_s0 + adxl_hole_inset, yc + dy * adxl_hole_spacing / 2, floor_t + adxl_standoff + adxl_pcb_t + 10]) adxl_pin();
+        translate([x_s0 + adxl_hole_inset, yc + dy * adxl_hole_spacing / 2, floor_t + adxl_standoff + adxl_pcb_t + 10 + apin_head[1]])
+            mirror([0, 0, 1]) adxl_pin();
 }
 
 module print_plate() {
@@ -922,7 +927,7 @@ module print_plate() {
     for (i = [0 : len(buttons) - 1]) translate([10 + i * 10, -15, 0])
         if (button_style == "captive") { button_pin_print(buttons[i]); translate([0, -10, 0]) button_collar(); }
         else plunger(buttons[i][1]);
-    translate([40, -15, 0]) usb_hatch();
+    translate([40, -15, 0]) usb_plug();
     if (sled_h > 0) translate([90, -30, 2 + strap_t + 2]) mount();
 }
 
@@ -930,13 +935,13 @@ if (part == "plate") translate([0, 0, back_h]) plate();
 else if (part == "cover") cover_print();
 else if (part == "plunger") plunger(user_recess);
 else if (part == "reset_plunger") plunger(reset_recess);
-else if (part == "usb_hatch") usb_hatch();
 else if (part == "gasket") gasket();
 else if (part == "usb_plug") usb_plug();
 else if (part == "usb_clamp") usb_clamp_print();
 else if (part == "board_clips") board_clips_print();
 else if (part == "awning_base") awning_base_print();
 else if (part == "adxl_pins") adxl_pins_print();
+else if (part == "adxl_pins_test") adxl_pins_print(adxl_pin_test_d);
 else if (part == "button_pin") button_pin_print(user_btn);
 else if (part == "reset_button_pin") button_pin_print(reset_btn);
 else if (part == "button_collar") button_collar();

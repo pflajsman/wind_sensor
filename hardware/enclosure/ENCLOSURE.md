@@ -6,7 +6,7 @@ were exported with the default values.
 ```
   front (label, PAIR + RST pockets, LED window)   cover: one piece, no visible screws
   +--------------------------------------------------------------------+
-  | [GY-291] [ ===== 18650 in 2 snap clips ===== ] [ ESP32-H2 devkit |USB]=[hatch]
+  | [GY-291] [ ===== 18650 in 2 snap clips ===== ] [ ESP32-H2 devkit |USB]=[plug]
   +--------------------------------------------------------------------+
   back plate (6.5 mm, stiff): all mounts, gasket groove, dovetail channel in the back
   ============ awning_base: rail + snap latch, stuck/screwed to the awning ==========
@@ -14,12 +14,13 @@ were exported with the default values.
 
 ## Construction
 
-- **Back plate (`plate`)** carries everything: GY-291 on 2 snap pins (`adxl_pins`), the 18650 in two snap
+- **Back plate (`plate`)** carries everything: GY-291 on 2 press-fit pins (`adxl_pins`), the 18650 in two snap
   clips, and the ESP32 board on support posts, side fences, antenna-end stops and 2 separate
   snap clips (`board_clips`). The board has no mounting holes.
 - **Cover (`cover`)** is one deep shell that goes over the plate from the front. Its front
-  is clean apart from the engraved label, the two button pockets and the LED window.
-- **Screws from the back:** 4x countersunk M3 go through the plate into short heat-set inserts
+  is clean apart from the engraved label, the two button pockets and the LED window. The
+  front outer edges have a 1.5 mm 45 degree bevel (`cover_bevel`, 0 = sharp edges).
+- **Screws from the back:** 4x M3 low cylinder head screws in counterbores go through the plate into short heat-set inserts
   in the cover's end walls. They are only reachable with the box off the awning base.
 - **Hold-down ribs inside the cover** press the ESP32 board down (on a strip with no parts,
   0.3 mm interference) and keep the cell in its clips. No separate clamp parts.
@@ -38,11 +39,10 @@ were exported with the default values.
 | `button_collar` (2x) | 6.5 x 1.5 | PETG, flat |
 | `board_clips` (only with `esp_hold = "clips"`; 2 clips, mirror images) | 3.3 x 12.3 x 3.3 each | PETG, lying flat as exported, beak end on the bed |
 | `usb_clamp` (optional, not with `esp_hold = "clips"`) | 7.7 x 24.1 x 11.8 | PETG, top down, pockets up |
-| `usb_hatch` | 36.5 x 25 x 4.8 (3 + seal bead) | TPU 90A, outer face down |
-| `usb_plug` (instead of `usb_hatch`) | 24.5 x 20.5 x 8 | TPU 90A, cap down, stem up |
+| `usb_plug` | 24.5 x 20.5 x 8 | TPU 90A, cap down, stem up |
 | `gasket` | 164.9 x 35.4 x 2.0 | TPU 90A, flat, ridge up |
 | `awning_base` | 176.9 x 41.7 x 4.7 | PETG or ASA, flat, as exported |
-| `adxl_pins` (4: 2 + 2 spares) | 6 x 8.8 x 2.4 each | PETG, lying on a flat, as exported |
+| `adxl_pins` (4: 2 + 2 spares) | 6 x 6 x 6.8 each | PETG, standing head down, as exported |
 | `mount` (`mount_style = "dovetail"` only) | 75 x 36.8 x 15.7 | Plate down |
 
 Print the rigid parts in **PETG or ASA** (PLA softens in direct sun), 4 perimeters, 30 to
@@ -65,15 +65,20 @@ The middle pair keeps the battery end of the board free for the wiring.
 - **Why these do not break like the first ones:** the first hooks were 8 mm tall and 1.6 mm
   thick and had to bend 0.9 mm, about 3.4 % strain across the layer lines. The plate is now
   6.5 mm thick, so each arm starts 2 mm below the plate surface, in a moat cut around it.
-  That makes the arm 13.3 mm long; it is 1.2 mm thick and bends 0.7 mm, about **0.7 %**
-  strain, roughly a fifth of before. The moat is blind (1.5 mm of plate stays under it), so
+  That makes the arm 13.3 mm long. It is 1.4 mm thick (1.2 cracked) and 6.5 mm wide along
+  the board edge, and bends 0.9 mm, about **1.1 %** strain. The moat is blind (1.5 mm of plate stays under it), so
   the back stays sealed.
+- **Beaks:** 0.7 mm over the board edge (was 0.5), with a 0.7 mm straight face before the
+  lead-in slope (was 0.4), so they hold the board more firmly.
 - **Beaks on free copper only:** USB end on board x 7.6 to 9.0 (between ESD diodes D7/D10 and
   the battery JST). The middle beaks are 0.6 mm wide and sit in the 0.89 mm gap between header
   pads 38.885 and 41.425 (drill file), between the two side fences. The arms are wider below
-  the beak. The stop blocks at the antenna end are now 0.1 mm from the board (was 0.3), so the
+  the beak. The stop blocks at the antenna end are 0.1 mm from the board, so the
   board cannot shift far enough in X to put a beak on a pad: checked with 0.5 mm solder on every
   pad, for the board 0.1 mm toward the antenna up to 0.2 mm toward the USB end.
+- **Stop blocks at the antenna end** (they keep the board from sliding back) are 3 mm thick
+  at the top and 4.5 mm at the floor, buttressed toward the battery (were 2 mm and cracked at
+  the root).
 - Checked in the model: the board fits with nothing overlapping; raised 0.3 mm it hits the
   hooks at both ends; the cover clears the hooks.
 
@@ -97,16 +102,19 @@ Other changes on the new plate:
 
 Loose ADXL and battery wires used to creep up between the ESP32 board and the cover. The plate
 now has 6 small arches on the floor (`cable_guides`), 3 in each lane between the cell and the
-side wall, placed clear of the battery end walls and clips:
+side wall, placed clear of the battery end walls and clips. Each is 5 mm long with 1.5 mm
+legs (were 3 mm and 1.2 mm, and cracked); where they come close to the cell, their top is
+trimmed to stay 0.4 mm under it:
 
 ```
-   side wall |  ┌──┐ ┌──┐   ← two halves, 45 deg roof, 1.2 mm slot on top
-             |  │  └─┘  │
-             |  │ wires │   channel 4.5 x 2.5 mm (plus the roof triangle)
-   floor  ───┴──┴───────┴────
+   side wall |  ┌──┐  ┌──┐  ← two halves, 45 deg roof, 1.8 mm slot on top
+             |  │  └──┘  │
+             |  │ wires  │  channel 4.8 x 2.6 mm (plus the roof triangle)
+   floor  ───┴──┴────────┴────
 ```
 
-- Push the wires in through the slot (the halves flex apart a little) or thread them through.
+- Push the wires in through the 1.8 mm slot (wide enough that the halves hardly flex) or
+  thread them through.
   The channel takes about 6 thin wires (for example 26 AWG).
 - Use the lane on whichever side suits the wiring; both have guides.
 - At the antenna end, turn the wires inward in the 6 mm gap after the battery and run them
@@ -118,7 +126,7 @@ side wall, placed clear of the battery end walls and clips:
 `usb_clamp` (a block on the two USB-C shells, pressed by the cover) is optional; it is not
 used with `esp_hold = "clips"`, where the plate bridge does that job.
 
-## TPU seals (gasket and USB hatch)
+## TPU seals (gasket and USB plug)
 
 Both fit the grooves that are already in the plate and cover, so they work with a plate and
 cover you have already printed. Neither part changes the plate or cover geometry.
@@ -126,11 +134,8 @@ cover you have already printed. Neither part changes the plate or cover geometry
 - **`gasket`** replaces the 2 mm cord. It is a 1.8 x 0.8 mm base that sits loose in the 2.0 x
   1.5 mm plate groove, with a 0.9 mm ridge on top that stands 0.5 mm (`gasket_squeeze`) above
   the plate face (0.3 in the first version sealed only just). The cover flattens the ridge. Lay it in the groove with the ridge up.
-- **`usb_hatch`** (needs `mount_style = "dovetail"`: its lower screw goes into the sled) with
-  `hatch_seal = "bead"` (default) is one TPU part: a 1.2 mm bead on its
-  inner face goes into the cover's port groove and is 0.3 mm (`hatch_squeeze`) longer than the
-  groove is deep. No cord. `hatch_seal = "cord"` gives the old flat hatch for PETG + cord.
-- **`usb_plug`** is a push-in alternative to `usb_hatch`, with no screws to undo when charging.
+- **`usb_plug`** closes the USB port, with no screws to undo when charging (the old screwed
+  `usb_hatch` and its screw holes are gone).
   A hollow stem goes 5.5 mm into the cover's USB tunnel and is held by 2 barbed ribs
   (0.3 mm interference, `plug_rib_int`). The cap carries the same seal bead into the port
   groove (0.2 mm squeeze, `plug_squeeze`), so there are two seals. A pull tab at the top
@@ -140,7 +145,7 @@ cover you have already printed. Neither part changes the plate or cover geometry
   If it is too loose or too tight in your printed tunnel, change `plug_rib_int`
   by 0.1 and reprint.
 - TPU does not compress in volume, so a squeezed seal must still fit in its groove. The model
-  checks this: the gasket fills 84 % of its groove and the bead 72 % when squeezed.
+  checks this: the gasket fills 84 % of its groove and the plug bead 68 % when squeezed.
 
 Printing TPU 90A: direct-drive extruder, slow (15 to 25 mm/s), little or no retraction, 0.2 mm
 layers, 100 % infill (both parts are mostly perimeters anyway). Use a 0.45 mm line width so the
@@ -151,8 +156,6 @@ Fitting:
   of force, or the long sides gap open in the middle, reprint the gasket with
   `gasket_squeeze = 0.4`. If it still seals only just, 0.6 also fits (87 % fill); the model
   stops above 90 %.
-- On the hatch, tighten only until the hatch face touches the cover. TPU under a screw head
-  creeps, so do not crank it; a pan or cylinder head M3 that fits the 6.2 mm counterbore is fine.
 
 ### Outside dimensions (default values)
 
@@ -258,11 +261,8 @@ What the ESP32 data showed:
   by a **2.5 x 1 mm O-ring** in the pin groove; fit the O-rings and push the pins into their
   bores from inside the cover before closing. The captive buttons are **not sealed yet**.
 - LED window: sealed by the 0.6 mm skin (`thin`) or by the glued rod / resin (`hole`).
-- USB port, one of:
-  - `usb_plug`: barbed TPU stem in the port tunnel plus the bead in the groove around the
-    port. No screws.
-  - `usb_hatch`: TPU hatch with its moulded bead in the groove around the port (or a PETG
-    hatch with 2 mm cord), 1 screw above the port (into the cover) and 1 below (into the plate).
+- USB port: `usb_plug`, a barbed TPU stem in the port tunnel plus the bead in the groove
+  around the port. No screws.
 - Nothing passes through the sealed space.
 
 Realistic target is splash-proof (roughly IP54 to IP65), not submersion. FDM walls can seep:
@@ -325,31 +325,36 @@ sled, `mount` with hose clamps, M3 lock screw).
 
 ## Fixing the GY-291: `adxl_pins`
 
-The sensor is held by 2 snap pins instead of screws (`adxl_fix = "pins"`; `"screws"` brings
-back the M2.5 pilot holes).
+The sensor is held by 2 plain press-fit pins instead of screws (`adxl_fix = "pins"`;
+`"screws"` brings back the M2.5 pilot holes).
 
-- Each pin goes through the GY-291 hole and its standoff into a hidden chamber in the plate.
-  Two split prongs squeeze through the 2.9 mm hole and spring open under it. The 45 degree
-  shoulder is set 0.1 mm tight, so the pin pulls the board down onto the standoffs and it
-  cannot rattle (rattle would show up as false motion).
-- The chamber is closed underneath, so the box back stays sealed.
-- Printed lying on a flat, so the prongs bend along the layers. 4 are exported (2 spares).
-- To remove one, pull firmly on the head with pliers. If it breaks, print another.
+- Each pin is a solid round shaft (no split) with a 6 mm head. It goes through the GY-291 hole
+  into the 2.9 mm hole in the standoff. The printed hole comes out slightly undersize, so the
+  shaft is a light press fit and the head holds the board down on the standoff, so it cannot
+  rattle (rattle would show up as false motion).
+- The shaft is 5.6 mm long, 0.2 mm shorter than the hole, so the head always seats on the board.
+- The plate holes and the hidden chambers under them are unchanged, so already printed plates
+  fit. The chamber is closed underneath, so the box back stays sealed.
+- Printed standing, head down. 4 are exported (2 spares).
+- **Fit test:** `stl/adxl_pins.stl` has a 2.9 mm shaft (`apin_shaft_d`). If it will not go in,
+  print `stl/adxl_pin_test/adxl_pins_d2.8.stl`; if it is loose, `adxl_pins_d3.0.stl`. A drop
+  of glue in the hole also works.
+- To remove one, pull on the head with pliers.
 - **Measure** the hole in your GY-291 (`adxl_hole_d`, default 3.0 mm) and the hole spacing.
 
 ## Hardware list
 
 Full shopping list, screw lengths and how to fit the heat-set inserts: [HARDWARE.md](HARDWARE.md).
 
-- 4x M3 x 4 mm short heat-set inserts (cover)
-- 4x M3 x 10 mm countersunk, DIN 7991 (cover, from the back; 6 mm was for the old 3 mm plate)
+- 4x M3 x 3 mm short heat-set inserts, CNC Kitchen M3 short (cover)
+- 4x M3 x 6 mm low cylinder head, ISO 14580, TX10 (cover, from the back, in counterbores)
 - Outdoor double-sided foam tape (VHB type) for `awning_base`, plus 2x M4 countersunk
   screws or rivets (recommended)
-- Dovetail version only: 3x M3 standard inserts (2 hatch, 1 lock), 4x M3 x 10 mm cylinder
-  head instead of the countersunk ones, 2x M3 x 8 mm (hatch), 1x M3 x 10 mm (lock), 2x
+- Dovetail version only: 1x M3 standard insert (lock), 4x M3 x 10 mm cylinder
+  head instead of the countersunk ones, 1x M3 x 10 mm (lock), 2x
   stainless hose clamps
 - `adxl_fix = "screws"` only: 2x M2.5 x 6 mm self-tapping (GY-291)
-- TPU 90A filament for `gasket` and `usb_hatch` / `usb_plug` (or 2 mm silicone / EPDM cord, about 45 cm)
+- TPU 90A filament for `gasket` and `usb_plug` (or 2 mm silicone / EPDM cord, about 45 cm)
 - O-ring buttons only: 2x O-ring 2.5 x 1 mm. Captive buttons: CA glue for the 2 collars
 - `led_window = "hole"` only: 3 mm clear acrylic rod (about 4 mm long) or clear epoxy / UV resin
 
@@ -366,10 +371,10 @@ Full shopping list, screw lengths and how to fit the heat-set inserts: [HARDWARE
 openscad -o stl/plate.stl -D 'part="plate"' enclosure.scad
 ```
 
-Parts: `plate`, `cover`, `plunger`, `reset_plunger`, `usb_hatch`, `usb_plug`, `gasket`, `board_clips`, `usb_clamp`, `button_pin`, `reset_button_pin`, `button_collar`, `awning_base`, `adxl_pins`, `mount`, plus `assembly` (preview with ghost
+Parts: `plate`, `cover`, `plunger`, `reset_plunger`, `usb_plug`, `gasket`, `board_clips`, `usb_clamp`, `button_pin`, `reset_button_pin`, `button_collar`, `awning_base`, `adxl_pins`, `mount`, plus `assembly` (preview with ghost
 boards) and `print_plate`. The STLs in `stl/` were rendered with OpenSCAD 2021.01 and
 export as valid closed solids. `cover`, `plunger` and `reset_plunger` were re-exported for the
-two-button / LED-window version. `gasket`, `usb_plug`, `board_clips`, `usb_clamp` and the captive button parts are new, `usb_hatch` was re-exported with the TPU
-seal bead. `plate` and `awning_base` were re-exported for the rail mount (6.5 mm plate,
+two-button / LED-window version. `gasket`, `usb_plug`, `board_clips`, `usb_clamp` and the captive button parts are new. `cover` was re-exported with the beveled
+front edges and without the old USB hatch screw hole (`usb_hatch` was removed). `plate` and `awning_base` were re-exported for the rail mount (6.5 mm plate,
 dovetail channel, latch notch, ADXL pin holes); `adxl_pins` is new; `mount` is only for the
 dovetail version.
